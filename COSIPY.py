@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-test
+
 """
     This is the main code file of the 'COupled Snowpack and Ice surface energy
     and MAss balance glacier model in Python' (COSIPY). The model was initially written by
