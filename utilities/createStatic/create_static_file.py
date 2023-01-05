@@ -7,11 +7,14 @@ import xarray as xr
 import numpy as np
 from itertools import product
 import richdem as rd
+import fiona
+from horayzon_domain import curved_grid
 
 static_folder = '../../data/static/'
 
 tile = True
 aggregate = True
+domain_creation = True
 
 ### input digital elevation model (DEM)
 dem_path_tif = static_folder + 'DEM/n30_e090_3arc_v2.tif'
@@ -20,11 +23,31 @@ shape_path = static_folder + 'Shapefiles/Zhadang_RGI6.shp'
 ### path were the static.nc file is saved
 output_path = static_folder + 'Zhadang_static.nc'
 
-### to shrink the DEM use the following lat/lon corners
-longitude_upper_left = '90.62'
-latitude_upper_left = '30.48'
-longitude_lower_right = '90.66'
-latitude_lower_right = '30.46'
+if domain_creation:
+    print("Using automatic domain creation.")
+    #Get bound of glacier shapefile
+    shp = fiona.open(shape_path)
+    domain = {"lon_min": shp.bounds[0], "lon_max": shp.bounds[2], 
+              "lat_min": shp.bounds[1], "lat_max": shp.bounds[3]}
+
+    #Additionally there is the option of a planar grid which requires importing the function
+    dist_search = 10.0
+    ellps="WGS84"
+    #Do not forget to set the above to your requirements
+    domain_outer = curved_grid(domain, dist_search=dist_search, ellps=ellps)
+    ### Get lat/lon corners ###
+    #Note setup is created based on Northern Hemisphere glaciers
+    longitude_upper_left = str(domain_outer['lon_min'])
+    latitude_upper_left = str(domain_outer['lat_max'])
+    longitude_lower_right = str(domain_outer['lon_max'])
+    latitude_lower_right = str(domain_outer['lat_min'])
+else:
+
+    ### to shrink the DEM use the following lat/lon corners
+    longitude_upper_left = '90.62'
+    latitude_upper_left = '30.48'
+    longitude_lower_right = '90.66'
+    latitude_lower_right = '30.46'
 
 ### to aggregate the DEM to a coarser spatial resolution
 aggregate_degree = '0.003'
