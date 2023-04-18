@@ -36,7 +36,7 @@ import pandas as pd
 
 sys.path.append("../../")
 #from utilities.aws2cosipy.crop_file_to_glacier import bbox_2d_array
-sys.path.append("/home/niki/Dokumente/cosipy/utilities/aws2cosipy/")
+sys.path.append("/home/niki/Dokumente/cosipy/utilities/aws2cosipy/") #this is a local test, because my pycharm does not work with XESMF right now and spyder is a bit strang on sys.path.append
 from crop_file_to_glacier import crop_file_to_glacier
 # -----------------------------------------------------------------------------
 # Settings
@@ -80,7 +80,7 @@ if not os.path.isdir(path_out):
     os.makedirs(path_out)
 
 #Start customising here
-static_file = "/home/niki/Dokumente/cosipy/data/static/Abramov_static_test.nc"
+static_file = "/home/niki/Dokumente/cosipy/data/static/ChhotaShigri_static_raw.nc"
 ds = xr.open_dataset(static_file)
 elevation = ds["HGT"].values
 lon = ds["lon"].values
@@ -99,7 +99,10 @@ elevation_ortho = np.ascontiguousarray(elevation[slice_in])
 elevation += hray.geoid.undulation(lon, lat, geoid="EGM96")  # [m]
 
 # Compute glacier mask
-mask_glacier = ds["MASK"].values.astype(bool)
+mask_glacier = ds["MASK"].values
+#set NaNs to zero, relict from create static file
+mask_glacier[np.isnan(mask_glacier)] = 0
+mask_glacier = mask_glacier.astype(bool)
 mask_glacier = mask_glacier[slice_in]
 #mask with buffer for aggregation to lower spatial resolutions
 
@@ -230,7 +233,7 @@ num_ts = int((time_dt_end - time_dt_beg) / dt_step)
 ta = [time_dt_beg + dt_step * i for i in range(num_ts)]
 
 
-file_sw_dir_cor = "sw_dir_cor_ALOS_abramov.nc"
+file_sw_dir_cor = "sw_dir_cor_ALOS_ChhotaShigri.nc"
 
 
 # Add sw dir correction and regrid
@@ -239,7 +242,7 @@ comp_time_shadow = []
 sw_dir_cor = np.zeros(vec_tilt_enu.shape[:2], dtype=np.float32)
 
 ##Load coarse grid
-ds_coarse = xr.open_dataset('/home/niki/Dokumente/cosipy/data/static/Abramov_static_agg.nc')
+ds_coarse = xr.open_dataset('/home/niki/Dokumente/cosipy/data/static/ChhotaShigri_static_agg.nc')
 ds_coarse['mask'] = ds_coarse['MASK'] #prepare for masked regridding
 
 ### Build regridder ###

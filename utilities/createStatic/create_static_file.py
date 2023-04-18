@@ -16,21 +16,21 @@ static_folder = '../../data/static/'
 tile = True
 aggregate = False
 ### to aggregate the DEM to a coarser spatial resolution
-aggregate_degree = '0.003'
+aggregate_degree = '0.00277778'
 automatic_domain = True
 distributed_radiation = True
 # ref exist: If already have high res. static data set to True and skip calculation below
 ref_exist = False
 
 ### input digital elevation model (DEM)
-#dem_path_tif = static_folder + 'DEM/n30_e090_3arc_v2.tif'
-dem_path_tif = static_folder + 'DEM/ALOS_N039E071_AVE_DSM.tif'
+dem_path_tif = static_folder + 'DEM/n32_e077_3arc_v2.tif'
+#dem_path_tif = static_folder + 'DEM/ALOS_N039E071_AVE_DSM.tif'
 ### input shape of glacier or study area, e.g. from the Randolph glacier inventory
 #shape_path = static_folder + 'Shapefiles/Zhadang_RGI6.shp'
-shape_path = static_folder + 'Shapefiles/abramov_rgi6.shp'
+shape_path = static_folder + 'Shapefiles/ChhotaShigri.shp'
 ### path were the static.nc file is saved
-output_path = static_folder + 'Abramov_static_test.nc'
-output_path_agg = static_folder + 'Abramov_static_agg.nc'
+output_path = static_folder + 'ChhotaShigri_static_raw.nc'
+output_path_agg = static_folder + 'ChhotaShigri_static_agg.nc'
 
 def domain_creation(shp_path, dist_search=10.0, ellps="WGS84"):
     print("Using automatic domain creation.")
@@ -103,6 +103,7 @@ def create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=
 
     ### set NaNs in mask to -9999 and elevation within the shape to 1
     mask=mask.Band1.values
+    # -> for chhota shigri, values outside mask are nan and not 0
     mask[np.isnan(mask)]=-9999
     mask[mask>0]=1
     print(mask)
@@ -162,7 +163,7 @@ if distributed_radiation:
         print("Skipping calculation of high resolution static file.")
     else:
         create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path, tile=tile,
-                      aggregate=False, aggregate_degree=aggregate_degree, automatic_domain=True, dist_search=25.0)
+                      aggregate=False, aggregate_degree=aggregate_degree, automatic_domain=True, dist_search=10.0)
     print("Created high resolution domain for LUTs.")
     create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path_agg, tile=tile,
                   aggregate=True, aggregate_degree=aggregate_degree, automatic_domain=True, dist_search=1.0)
