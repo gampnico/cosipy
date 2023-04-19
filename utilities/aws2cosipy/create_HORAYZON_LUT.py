@@ -35,9 +35,9 @@ import xesmf as xe
 import pandas as pd
 
 sys.path.append("../../")
-#from utilities.aws2cosipy.crop_file_to_glacier import bbox_2d_array
-sys.path.append("/home/niki/Dokumente/cosipy/utilities/aws2cosipy/") #this is a local test, because my pycharm does not work with XESMF right now and spyder is a bit strang on sys.path.append
-from crop_file_to_glacier import crop_file_to_glacier
+from utilities.aws2cosipy.crop_file_to_glacier import crop_file_to_glacier
+from utilities.aws2cosipy.aws2cosipyConfig import WRF
+
 # -----------------------------------------------------------------------------
 # Settings
 # -----------------------------------------------------------------------------
@@ -63,24 +63,24 @@ def add_variable_along_latlon(ds, var, name, units, long_name):
     ds[name].encoding['_FillValue'] = -9999
     return ds
 
-
+# set paths
+regrid = True #regrid to coarser resolution
 ellps = "WGS84"  # Earth's surface approximation (sphere, GRS80 or WGS84)
-path_out = "/home/niki/Dokumente/cosipy/output/"
-file_sw_dir_cor = "LUT_HORAYZON_sw_dir_cor_.nc"
-WRF = False
+path_out = "../../data/static/HRZ/"
+file_sw_dir_cor = "LUT_HORAYZON_sw_dir_cor.nc"
+
+static_file = "../../data/static/Zhadang_static_raw.nc" #path to high resolution dataset
+coarse_static_file = "../../data/static/Zhadang_static_agg.nc" #Load coarse grid
+
 # -----------------------------------------------------------------------------
 # Prepare data and initialise Terrain class
 # -----------------------------------------------------------------------------
 
 # Check if output directory exists
 if not os.path.isdir(path_out):
-    raise FileNotFoundError("Output directory does not exist")
-path_out += "shadow/gridded_NASADEM_Karakoram/"
-if not os.path.isdir(path_out):
-    os.makedirs(path_out)
+    os.makedirs(path_out, exist_ok=True)
 
-#Start customising here
-static_file = "/home/niki/Dokumente/cosipy/data/static/ChhotaShigri_static_raw.nc"
+# Load high resolution static data
 ds = xr.open_dataset(static_file)
 elevation = ds["HGT"].values
 lon = ds["lon"].values
@@ -92,6 +92,7 @@ slice_in = (slice(1,lat.shape[0]-1, None), slice(1, lon.shape[0]-1))
 offset_0 = slice_in[0].start
 offset_1 = slice_in[1].start
 print("Inner domain size: " + str(elevation[slice_in].shape))
+
 #orthometric height (-> height above mean sea level)
 elevation_ortho = np.ascontiguousarray(elevation[slice_in])
 
@@ -104,8 +105,9 @@ mask_glacier = ds["MASK"].values
 mask_glacier[np.isnan(mask_glacier)] = 0
 mask_glacier = mask_glacier.astype(bool)
 mask_glacier = mask_glacier[slice_in]
-#mask with buffer for aggregation to lower spatial resolutions
 
+#mask with buffer for aggregation to lower spatial resolutions
+#set +- 11 grid cells to "glacier" to allow ensure regridding
 ilist = []
 jlist = []
 for i in np.arange(0,mask_glacier.shape[0]):
@@ -119,10 +121,10 @@ ix_latmin = np.min(ilist)
 ix_latmax = np.max(ilist)
 ix_lonmin = np.min(jlist)
 ix_lonmax = np.max(jlist)
+
 #Watch out that the large domain incorporates the buffer
 slice_buffer = (slice(ix_latmin-11,ix_latmax+11), slice(ix_lonmin-11, ix_lonmax+11))
 mask_glacier[slice_buffer] = True
-#Where do we make output smaller to save some space?
 
 # Compute ECEF coordinates
 x_ecef, y_ecef, z_ecef = hray.transform.lonlat2ecef(*np.meshgrid(lon, lat),
@@ -157,7 +159,6 @@ rot_mat_glob2loc = hray.transform.rotation_matrix_glob2loc(vec_north_enu,
 
 del vec_north_enu
 
-#Crop here?
 # Compute slope (in global ENU coordinates!)
 slice_in_a1 = (slice(slice_in[0].start - 1, slice_in[0].stop + 1),
                slice(slice_in[1].start - 1, slice_in[1].stop + 1))
@@ -176,8 +177,6 @@ print("Surface enlargement factor (min/max): %.3f" % surf_enl_fac.min()
 # Initialise terrain
 mask = np.ones(vec_tilt_enu.shape[:2], dtype=np.uint8)
 mask[~mask_glacier] = 0  # mask non-glacier grid cells
-#try playing around here and add a buffer around mask?
-
 
 terrain = hray.shadow.Terrain()
 dim_in_0, dim_in_1 = vec_tilt_enu.shape[0], vec_tilt_enu.shape[1]
@@ -212,6 +211,7 @@ aspect = np.pi / 2.0 - np.arctan2(vec_tilt_enu_loc[:, :, 1],
                                   vec_tilt_enu_loc[:, :, 0])
 aspect[aspect < 0.0] += np.pi * 2.0  # [0.0, 2.0 * np.pi]
 
+#Create output file for HRZ
 static_ds = xr.Dataset()
 static_ds.coords['lat'] = lat[slice_buffer[0]]
 static_ds.coords['lon'] = lon[slice_buffer[1]]
@@ -225,24 +225,19 @@ add_variable_along_latlon(static_ds, surf_enl_fac[slice_buffer], "surf_enl_fac",
 # -----------------------------------------------------------------------------
 
 # Create time axis
-#time in UTC, bring to local time?
+# time in UTC, set timeframe here
 time_dt_beg = dt.datetime(2020, 1, 1, 0, 00, tzinfo=dt.timezone.utc)
 time_dt_end = dt.datetime(2020, 12, 31, 23, 00, tzinfo=dt.timezone.utc)
 dt_step = dt.timedelta(hours=1)
 num_ts = int((time_dt_end - time_dt_beg) / dt_step)
 ta = [time_dt_beg + dt_step * i for i in range(num_ts)]
 
-
-file_sw_dir_cor = "sw_dir_cor_ALOS_ChhotaShigri.nc"
-
-
 # Add sw dir correction and regrid
-
 comp_time_shadow = []
 sw_dir_cor = np.zeros(vec_tilt_enu.shape[:2], dtype=np.float32)
 
 ##Load coarse grid
-ds_coarse = xr.open_dataset('/home/niki/Dokumente/cosipy/data/static/ChhotaShigri_static_agg.nc')
+ds_coarse = xr.open_dataset(coarse_static_file)
 ds_coarse['mask'] = ds_coarse['MASK'] #prepare for masked regridding
 
 ### Build regridder ###
@@ -269,8 +264,10 @@ sw_holder[0,:,:] = sw_dir_cor[slice_buffer]
 mask_crop = mask[slice_buffer]
 add_variable_along_timelatlon(result, sw_holder, "sw_dir_cor", "-", "correction factor for direct downward shortwave radiation")
 add_variable_along_latlon(result, mask_crop, "mask", "-", "Boolean Glacier Mask")
+
 #build regridder
-regrid_mask = xe.Regridder(result, ds_coarse, method="conservative_normed")
+if regrid == True:
+    regrid_mask = xe.Regridder(result, ds_coarse, method="conservative_normed")
 
 result.close()
 del result
@@ -305,10 +302,12 @@ for i in range(len(ta)): #loop over timesteps
     add_variable_along_timelatlon(result, sw_holder, "sw_dir_cor", "-", "correction factor for direct downward shortwave radiation")
     add_variable_along_latlon(result, mask_crop, "mask", "-", "Boolean Glacier Mask")
     
-    now = time.time()  
-    datasets.append(regrid_mask(result))
-    print("regridding took:", time.time()-now)
-    
+    now = time.time()
+    if regrid == True:  
+        datasets.append(regrid_mask(result))
+        #print("regridding took:", time.time()-now)
+    else:
+        datasets.append(result)
     #Close and delete files to free memory
     result.close()
     del result
@@ -317,28 +316,29 @@ for i in range(len(ta)): #loop over timesteps
 #still test if result is different when shape is not the same
 #how to solve issue of time?
 
-
+#Merge single timestep files
 now = time.time()
 ds_sw_cor = xr.concat(datasets, dim='time')
 ds_sw_cor['time'] = pd.to_datetime(ds_sw_cor['time'].values)
-ds_sw_cor['MASK'] = ds_coarse['MASK']
+if regrid == True:
+    ds_sw_cor['MASK'] = ds_coarse['MASK'] #replace with original mask
+else:
+    ds_sw_cor['MASK'] = ds['MASK']
 ds_sw_cor = ds_sw_cor[['sw_dir_cor','MASK']]
 print("concat took:", time.time()-now)
-
 
 time_tot = np.array(comp_time_shadow).sum()
 print("Elapsed time (total / per time step): " + "%.2f" % time_tot
       + " , %.2f" % (time_tot / len(ta)) + " s")
 
 #regrid static ds and merge with sw_dir_cor
-regrid_no_mask = xe.Regridder(static_ds, ds_coarse[["HGT"]], method="conservative_normed")
-regrid = regrid_no_mask(static_ds, ds_coarse[["HGT"]])
-combined = xr.merge([ds_sw_cor, regrid])
+if regrid == True:
+    regrid_no_mask = xe.Regridder(static_ds, ds_coarse[["HGT"]], method="conservative_normed")
+    regrid = regrid_no_mask(static_ds, ds_coarse[["HGT"]])
+    combined = xr.merge([ds_sw_cor, regrid])
+else:
+    combined = xr.merge([ds_sw_cor, static_ds])
 
 #BBox script to crop to minimal extent!
 cropped_combined = crop_file_to_glacier(combined)
 cropped_combined.to_netcdf(path_out+file_sw_dir_cor)
-
-
-#if __name__ == "__main__":
-#    xx

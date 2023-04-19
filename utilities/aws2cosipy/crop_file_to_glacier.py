@@ -6,11 +6,8 @@ from itertools import product
 #np.warnings.filterwarnings('ignore')
 
 sys.path.append('../../')
-sys.path.append('/home/niki/Dokumente/cosipy/')
 from utilities.aws2cosipy.aws2cosipyConfig import *
-#from cosipy.modules.radCor import *
 import argparse
-WRF = False
 
 def crop_file_to_glacier(ds):
 

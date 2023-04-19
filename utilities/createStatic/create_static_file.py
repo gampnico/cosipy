@@ -9,29 +9,35 @@ import numpy as np
 from itertools import product
 import richdem as rd
 import fiona
-from horayzon_domain import curved_grid
+from horayzon.domain import curved_grid
 
 static_folder = '../../data/static/'
 
-tile = True
-aggregate = False
-### to aggregate the DEM to a coarser spatial resolution
-aggregate_degree = '0.00277778'
-automatic_domain = True
+## Define settings ##
 distributed_radiation = True
-# ref exist: If already have high res. static data set to True and skip calculation below
+tile = True
+
+## If distributed radation is not desired, run default static file creation according to values below ##
+# to aggregate the DEM to a coarser spatial resolution
+aggregate = True
+aggregate_degree = '0.00277778'
+automatic_domain = True #Do km buffer around glacier or set lat lon box by hand in functions below
+
+# ref exist: If already have high res. static data set to True and skip calculation
 ref_exist = False
 
 ### input digital elevation model (DEM)
-dem_path_tif = static_folder + 'DEM/n32_e077_3arc_v2.tif'
-#dem_path_tif = static_folder + 'DEM/ALOS_N039E071_AVE_DSM.tif'
+dem_path_tif = static_folder + 'DEM/n30_e090_3arc_v2.tif'
+
 ### input shape of glacier or study area, e.g. from the Randolph glacier inventory
 #shape_path = static_folder + 'Shapefiles/Zhadang_RGI6.shp'
-shape_path = static_folder + 'Shapefiles/ChhotaShigri.shp'
-### path were the static.nc file is saved
-output_path = static_folder + 'ChhotaShigri_static_raw.nc'
-output_path_agg = static_folder + 'ChhotaShigri_static_agg.nc'
+shape_path = static_folder + 'Shapefiles/Zhadang_RGI6.shp'
 
+### path were the static.nc file is saved
+output_path = static_folder + 'Zhadang_static_raw.nc'
+output_path_agg = static_folder + 'Zhadang_static_agg.nc'
+
+#domain creation assumes WGS84 is valid
 def domain_creation(shp_path, dist_search=10.0, ellps="WGS84"):
     print("Using automatic domain creation.")
     #Get bound of glacier shapefile
@@ -47,15 +53,16 @@ def domain_creation(shp_path, dist_search=10.0, ellps="WGS84"):
     latitude_upper_left = str(domain_outer['lat_max'])
     longitude_lower_right = str(domain_outer['lon_max'])
     latitude_lower_right = str(domain_outer['lat_min'])
-    print(longitude_upper_left)
+
     return (longitude_upper_left, latitude_upper_left, longitude_lower_right, latitude_lower_right)
 
 def create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path, tile=tile, aggregate=aggregate, aggregate_degree=aggregate_degree, automatic_domain=automatic_domain, dist_search=25.0):
     if automatic_domain:
         longitude_upper_left, latitude_upper_left, longitude_lower_right, latitude_lower_right = domain_creation(shape_path, dist_search=dist_search, ellps="WGS84")
-        print(longitude_upper_left)
+
     else:
         ### to shrink the DEM use the following lat/lon corners
+        print("Please be aware that you switched off the automatic domain creation which requires by-hand adjustment of the borders.")
         longitude_upper_left = '90.62'
         latitude_upper_left = '30.48'
         longitude_lower_right = '90.66'
@@ -91,6 +98,7 @@ def create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=
     os.system('gdaldem slope -of NETCDF ' + dem_path + ' ' + slope_path + ' -s 111120')
 
     ### calculate aspect from DEM
+    #no_data value may differ from file to file, depending on your DEM you may need to change this
     aspect = np.flipud(rd.TerrainAttribute(rd.LoadGDAL(dem_path_tif, no_data=-9999), attrib = 'aspect'))
 
     ### calculate mask as NetCDF with DEM and shapefile
@@ -103,7 +111,7 @@ def create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=
 
     ### set NaNs in mask to -9999 and elevation within the shape to 1
     mask=mask.Band1.values
-    # -> for chhota shigri, values outside mask are nan and not 0
+
     mask[np.isnan(mask)]=-9999
     mask[mask>0]=1
     print(mask)
@@ -164,10 +172,14 @@ if distributed_radiation:
     else:
         create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path, tile=tile,
                       aggregate=False, aggregate_degree=aggregate_degree, automatic_domain=True, dist_search=10.0)
+    print("\n----------------------------------------")
     print("Created high resolution domain for LUTs.")
+    print("----------------------------------------\n")
     create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path_agg, tile=tile,
                   aggregate=True, aggregate_degree=aggregate_degree, automatic_domain=True, dist_search=1.0)
+    print("\n----------------------------------------")
     print("Stored aggregated domain for resampling.")
+    print("----------------------------------------\n")
 else:
     create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path, tile=tile,
                   aggregate=aggregate, aggregate_degree=aggregate_degree, automatic_domain=automatic_domain)
