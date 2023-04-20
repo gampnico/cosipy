@@ -227,7 +227,7 @@ add_variable_along_latlon(static_ds, surf_enl_fac[slice_buffer], "surf_enl_fac",
 # Create time axis
 # time in UTC, set timeframe here
 time_dt_beg = dt.datetime(2020, 1, 1, 0, 00, tzinfo=dt.timezone.utc)
-time_dt_end = dt.datetime(2020, 12, 31, 23, 00, tzinfo=dt.timezone.utc)
+time_dt_end = dt.datetime(2021, 1, 1, 0, 00, tzinfo=dt.timezone.utc)
 dt_step = dt.timedelta(hours=1)
 num_ts = int((time_dt_end - time_dt_beg) / dt_step)
 ta = [time_dt_beg + dt_step * i for i in range(num_ts)]

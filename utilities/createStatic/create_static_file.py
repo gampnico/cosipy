@@ -13,6 +13,9 @@ from horayzon.domain import curved_grid
 
 static_folder = '../../data/static/'
 
+sys.path.append("../..")
+from utilities.aws2cosipy.crop_file_to_glacier import crop_file_to_glacier
+
 ## Define settings ##
 distributed_radiation = True
 tile = True
@@ -22,15 +25,14 @@ tile = True
 aggregate = True
 aggregate_degree = '0.00277778'
 automatic_domain = True #Do km buffer around glacier or set lat lon box by hand in functions below
-
+crop_file = True #crop to minimum extent
 # ref exist: If already have high res. static data set to True and skip calculation
 ref_exist = False
 
 ### input digital elevation model (DEM)
-dem_path_tif = static_folder + 'DEM/n30_e090_3arc_v2.tif'
+dem_path_tif = static_folder + 'DEM/n30_e090_3arc_v2.tif'  #n30
 
 ### input shape of glacier or study area, e.g. from the Randolph glacier inventory
-#shape_path = static_folder + 'Shapefiles/Zhadang_RGI6.shp'
 shape_path = static_folder + 'Shapefiles/Zhadang_RGI6.shp'
 
 ### path were the static.nc file is saved
@@ -38,7 +40,7 @@ output_path = static_folder + 'Zhadang_static_raw.nc'
 output_path_agg = static_folder + 'Zhadang_static_agg.nc'
 
 #domain creation assumes WGS84 is valid
-def domain_creation(shp_path, dist_search=10.0, ellps="WGS84"):
+def domain_creation(shp_path, dist_search, ellps="WGS84"):
     print("Using automatic domain creation.")
     #Get bound of glacier shapefile
     shp = fiona.open(shp_path)
@@ -56,7 +58,7 @@ def domain_creation(shp_path, dist_search=10.0, ellps="WGS84"):
 
     return (longitude_upper_left, latitude_upper_left, longitude_lower_right, latitude_lower_right)
 
-def create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path, tile=tile, aggregate=aggregate, aggregate_degree=aggregate_degree, automatic_domain=automatic_domain, dist_search=25.0):
+def create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path, tile=tile, aggregate=aggregate, aggregate_degree=aggregate_degree, automatic_domain=automatic_domain, crop_file=crop_file, dist_search=20.0):
     if automatic_domain:
         longitude_upper_left, latitude_upper_left, longitude_lower_right, latitude_lower_right = domain_creation(shape_path, dist_search=dist_search, ellps="WGS84")
 
@@ -111,7 +113,8 @@ def create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=
 
     ### set NaNs in mask to -9999 and elevation within the shape to 1
     mask=mask.Band1.values
-
+    #some datasets have 0s instead of -9999
+    mask[mask == 0] = -9999
     mask[np.isnan(mask)]=-9999
     mask[mask>0]=1
     print(mask)
@@ -158,8 +161,14 @@ def create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=
                         sys.exit()
     check_for_nan(ds)
     print(output_path)
-    ds.to_netcdf(output_path)
-    ds.close()
+    if crop_file == True:
+        ds_crop = crop_file_to_glacier(ds)
+        ds_crop.to_netcdf(output_path)
+        ds.close()
+        ds_crop.close()
+    else:
+        ds.to_netcdf(output_path)
+        ds.close()
     print("Study area consists of ", np.nansum(mask[mask==1]), " glacier points")
     print("Done")
 
@@ -170,16 +179,22 @@ if distributed_radiation:
     if ref_exist:
         print("Skipping calculation of high resolution static file.")
     else:
-        create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path, tile=tile,
-                      aggregate=False, aggregate_degree=aggregate_degree, automatic_domain=True, dist_search=10.0)
+        #This needs to have a buffer
+        create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path,
+                      tile=tile, aggregate=False, aggregate_degree=aggregate_degree,
+                       automatic_domain=True, crop_file=False, dist_search=20.0)
     print("\n----------------------------------------")
     print("Created high resolution domain for LUTs.")
     print("----------------------------------------\n")
-    create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path_agg, tile=tile,
-                  aggregate=True, aggregate_degree=aggregate_degree, automatic_domain=True, dist_search=1.0)
+    #This doesn't really need a buffer so crop it to minimum extent possible next
+    create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path_agg,
+                  tile=tile, aggregate=True, aggregate_degree=aggregate_degree,
+                  automatic_domain=True, crop_file=True, dist_search=1.0)
     print("\n----------------------------------------")
     print("Stored aggregated domain for resampling.")
     print("----------------------------------------\n")
 else:
-    create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path, tile=tile,
-                  aggregate=aggregate, aggregate_degree=aggregate_degree, automatic_domain=automatic_domain)
+    #Generally less grid cells the better, so crop to minimum extent possible
+    create_static(dem_path_tif=dem_path_tif, shape_path=shape_path, output_path=output_path,
+                  tile=tile, aggregate=aggregate, aggregate_degree=aggregate_degree,
+                  automatic_domain=automatic_domain, crop_file=True, dist_search=20.0)

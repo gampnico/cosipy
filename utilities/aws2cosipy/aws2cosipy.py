@@ -478,6 +478,38 @@ def create_2D_input(cs_file, cosipy_file, static_file, start_date, end_date, x0=
                         else:
                             G_interp[t, i, j] = sw[t]
 
+    elif radiationModule == 'Horayzon2022':
+        print('Run the Radiation Module HORAYZON')
+
+        # get correction factor which must be computed beforehand!
+        try:
+            correction_factor = xr.open_dataset("../../data/static/HRZ/LUT_HORAYZON_sw_dir_cor.nc")
+        except:
+            print("HORAYZON Lookup Table is not available.")
+            sys.exit()
+
+        correction_factor['doy'] = correction_factor.time.dt.dayofyear
+        correction_factor['hour'] = correction_factor.time.dt.hour
+        #Create unique identifier for doy and hour and set as index 
+        correction_factor['time_id'] = correction_factor['doy'] + correction_factor['hour']/100
+        correction_factor = correction_factor.set_index(time='time_id')
+        print(correction_factor)
+
+        #Start loop over each timestep
+        for t in range(len(dso.time)):
+            #get doy and timestep from df and check with doy and hour from static file
+            year = df.index[t].year
+            doy = df.index[t].dayofyear
+            hour = df.index[t].hour
+            #we rely on the fact that the HORAYZON LUT is created for a leap year and factors don't change with time
+            if (year % 4 != 0 and doy > 59): #59th DOY = February 28th, leap year continues with 29th of Feb as doy 60
+                doy += 1
+
+            time_identifier = doy + hour/100
+            sw_cor_val = correction_factor.sel(time=time_identifier)['sw_dir_cor']
+            #multiply correction factors with forcing
+            G_interp[t,:,:] = sw_cor_val * sw[t]
+
     elif radiationModule == 'Moelg2009':
         print('Run the Radiation Module Moelg2009')
 
@@ -587,6 +619,7 @@ def create_2D_input(cs_file, cosipy_file, static_file, start_date, end_date, x0=
     # Write file to disc 
     #-----------------------------------
     #dso.to_netcdf(cosipy_file, encoding=encoding)
+    dso.to_netcdf(cosipy_file)
     check_for_nan(dso)
     dso.to_netcdf(cosipy_file)
 
