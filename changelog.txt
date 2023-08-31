@@ -303,18 +303,50 @@ Refactors:
     - Linting, type hinting, docstrings.
 
 ###
-feat(albedo): add snow-covered debris albedo from Lejeune et al., (2013)
+fix(tests): pytest missing an init file 
 
-Fixes:
-    - Fresh snow properties would only revert to the underlying snowpack when
-      the snow height was negative.
+Fixes pytest not working as standalone due to a missing init file.
 
-Adds:
-    - Snow-covered debris albedo (Lejeune et al., 2013).
-    - Constants for debris albedo, critical snowpack thickness, and albedo
-      weighting coefficient.
-    - Tests for albedo parametrisation.
+###
+feat(tests): check test output for expected value and type 
 
-Refactors:
-    - Separated some functions to avoid duplicated code.
-    - Error handling to use fstrings.
+Adds function `check_output(value, target)` to `conftest_boilerplate` which
+checks that the value and its type matches the target value and type.
+
+###
+refactor: harden .coveragerc logic and .gitignore
+
+Includes test definitions in coverage, so redundant test logic is easier to
+catch.
+
+Adds coverage support for pragma, defensive/abstract/non-runnable errors.
+
+###
+feat(tests): patch global variables during tests
+
+Adds ability to patch global variables when running tests, which avoids the
+need to hardcode or modify the variables directly. Call within a test function
+using:
+    
+    conftest_boilerplate.patch_variable(
+        monkeypatch, module="foo.bar", new_params={"var01": 1.0, "var02": 3.2}
+        )
+
+###
+chore: standardised docstrings, fix namespace pollution
+
+Formats docstrings in `node.py` and `grid.py` to be more consistent.
+
+Fixes outdated parameters in docstrings, typos, missing type hints, and some
+phrasing.
+
+Fixes dangerous namespace pollution when using "from x import *", especially
+since most of the imported objects are unused.
+
+###
+feat: warn user when percolation bug occurs
+
+Adds a printed warning when percolation fails a sanity check, where the total
+water after percolating is greater than the initially available water.
+
+The warning includes the timestep when this occurs.

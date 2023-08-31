@@ -13,6 +13,8 @@ directly:
             ...
 """
 
+from types import ModuleType
+from typing import Any
 from unittest.mock import patch
 
 import matplotlib.pyplot as plt
@@ -33,6 +35,14 @@ def conftest_mock_check_file_exists():
     patcher = patch("os.path.exists")
     mock_exists = patcher.start()
     mock_exists.return_value = True
+
+
+@pytest.fixture(scope="function", autouse=False)
+def conftest_disable_jit():
+    # numba.config.DISABLE_JIT = True
+    raise NotImplementedError(
+        "Disabling JIT for tests is not yet implemented."
+    )
 
 
 @pytest.fixture(scope="function", autouse=False)
@@ -119,6 +129,7 @@ def fixture_conftest_mock_grid(conftest_mock_grid_values: dict) -> Grid:
         layer_liquid_water_content=data["layer_liquid_water_content"],
     )
     assert isinstance(grid_object, Grid)
+    assert grid_object.number_nodes == len(data["layer_heights"])
 
     yield grid_object
 
@@ -364,12 +375,88 @@ class TestBoilerplate:
         grid = self.regenerate_grid_values(distribution="static")
         assert isinstance(grid, Grid)
 
+    def check_output(self, variable: Any, x_type: Any, x_value: Any) -> bool:
+        """Checks a variable matches an expected type and value.
+
+        Args:
+            variable: Variable to check.
+            x_type: Expected variable type.
+            x_value: Expected variable value.
+
+        Returns:
+            True when all assertions pass.
+        """
+
+        assert isinstance(variable, x_type)
+        if np.issubdtype(type(variable), np.number):
+            assert np.isclose(variable, x_value)
+        else:
+            assert variable == x_value
+
+        return True
+
+    def test_check_output(self):
+        variable_list = [[1.0, float], ["test", str], [1, int], [True, bool]]
+
+        for pair in variable_list:
+            assert self.check_output(
+                variable=pair[0], x_type=pair[1], x_value=pair[0]
+            )
+        test_array = [0.0, 0.5, 0.6]
+        test_value = max(test_array)
+        assert test_value == 0.6
+        assert isinstance(test_value, float)
+        assert self.check_output(
+            variable=max(test_array), x_type=float, x_value=test_value
+        )
+
+    def patch_variable(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        module: ModuleType,
+        new_params: dict,
+    ):
+        """Patch any variable in a module.
+
+        Patch the module where the variable is used, not where it's
+        defined. The patched variable only exists within the test
+        function's scope, so test parametrisation is still supported.
+
+        Example:
+            To patch constants used by `cpkernel.node.Node`:
+
+                .. code-block:: python
+
+                    patches = {"dt": 7200, "air_density": 1.0}
+                    conftest.boilerplate.patch_variable(
+                        monkeypatch,
+                        cosipy.cpkernel.node.constants,
+                        patches,
+                        )
+
+        Args:
+            monkeypatch: Monkeypatch instance.
+            module: Target module for patching.
+            new_params: Variable names as keys, desired patched values as values:
+
+                .. code-block:: python
+
+                    new_params = {"foo": 1, "bar": 2.0}
+        """
+
+        if not isinstance(new_params, dict):
+            note = "Pass dict with variable names and patched values as items."
+            raise TypeError(note)
+        for key in new_params:
+            monkeypatch.setattr(module, key, new_params[key])
+
     def test_boilerplate_integration(self):
         """Integration test for boilerplate methods."""
 
         self.test_check_plot()
         self.test_set_timestamp()
         self.test_set_rng_seed()
+        self.test_check_output()
 
 
 @pytest.fixture(name="conftest_boilerplate", scope="function", autouse=False)
