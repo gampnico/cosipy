@@ -98,3 +98,25 @@ air_density = 1.1                               # density of air [kg m^(-3)]
 sigma = 5.67e-8                                 # Stefan-Bolzmann constant [W m-2 K-4]
 zero_temperature = 273.16                       # Melting temperature [K]
 surface_emission_coeff = 0.99                   # surface emission coefficient [-]
+
+critical_snowpack_thickness = 0.1               # critical snowpack thickness [m] (Lejeune et al., 2007)
+lejeune_weighting_coefficient = 0.33            # empirical weighting coefficient [-] (Lejeune et al., 2007)
+
+' DEBRIS CONSTANTS '
+# Lithological constants are empirically determined and highly localised.
+
+# Dolomitic debris
+debris_structure = "sedimentary"  # debris structure, e.g. sedimentary, crystalline.
+debris_density = 2840  # debris density [kg m-3] (Dolomite clasts, MinDat).
+debris_porosity = 0.3  # debris porosity [-] (Supraglacial debris, Anderson & Anderson, 2016).
+debris_packing_porosity = 0.2596  # Volumetrically-weighted! 0.2596 for rombohedral packing, 0.4764 for cubic packing. 
+debris_grain_size = 64 # Grain size of debris particles, [mm].
+
+# TC, TD, and Cp are related: Cp = TC / (TD * rho). Scale values to 273.15 K.
+thermal_conductivity_debris =  5.4 # debris thermal conductivity (dolomite, Fuchs 2015) [W m-1 K-1].
+thermal_diffusivity_debris =  2.16  # debris thermal diffusivity (dolomite, Fuchs 2015) [10^-6 m^2 s-1]
+spec_heat_debris = 870 # debris specific heat capacity (dolomite, Fuchs 2015) [J kg-1 K-1]
+
+# Debris void filler: fills interstitial spaces in the debris matrix. Not fully implemented!
+debris_void_porosity = 1.0  # Porosity of material filling debris void. Set to "1.0" for air.
+debris_void_density = 0.0 # Density of debris void filler. Ignored if the debris_void_porosity is "1.0".
