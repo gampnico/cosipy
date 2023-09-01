@@ -12,7 +12,6 @@ class TestDebrisNodeGet:
         height (float): Layer height [:math:`m`].
         density (float): Snow density [:math:`kg~m^{-3}`].
         temperature (int): Layer temperature [:math:`K`].
-        grain_size (float): Debris particle size [mm].
         lwc (float): Liquid water content [:math:`m~w.e.`].
         ice_fraction (float): Volumetric ice fraction [-].
     """
@@ -22,14 +21,12 @@ class TestDebrisNodeGet:
     temperature = 270.0
     lwc = 0.0
     ice_fraction = 0.0
-    grain_size = 64.0  # mm
 
     def create_node(
         self,
         height: float = height,
         density: float = density,
         temperature: float = temperature,
-        grain_size: float = grain_size,
         lwc: float = lwc,
         ice_fraction: float = ice_fraction,
     ) -> DebrisNode:
@@ -39,7 +36,6 @@ class TestDebrisNodeGet:
             height=height,
             debris_density=density,
             temperature=temperature,
-            grain_size=grain_size,
             liquid_water_content=lwc,
             ice_fraction=ice_fraction,
         )
@@ -63,11 +59,6 @@ class TestDebrisNodeGet:
     def test_node_get_layer_temperature(self, node, conftest_boilerplate):
         conftest_boilerplate.check_output(
             node.get_layer_temperature(), float, self.temperature
-        )
-
-    def test_node_get_layer_grain_size(self, node, conftest_boilerplate):
-        conftest_boilerplate.check_output(
-            node.get_layer_grain_size(), float, self.grain_size
         )
 
     def test_node_get_layer_ice_fraction(self, node, conftest_boilerplate):

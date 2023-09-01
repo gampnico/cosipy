@@ -110,7 +110,6 @@ debris_structure = "sedimentary"  # debris structure, e.g. sedimentary, crystall
 debris_density = 2840  # debris density [kg m-3] (Dolomite clasts, MinDat).
 debris_porosity = 0.3  # debris porosity [-] (Supraglacial debris, Anderson & Anderson, 2016).
 debris_packing_porosity = 0.2596  # Volumetrically-weighted! 0.2596 for rombohedral packing, 0.4764 for cubic packing. 
-debris_grain_size = 64 # Grain size of debris particles, [mm].
 
 # TC, TD, and Cp are related: Cp = TC / (TD * rho). Scale values to 273.15 K.
 thermal_conductivity_debris =  5.4 # debris thermal conductivity (dolomite, Fuchs 2015) [W m-1 K-1].

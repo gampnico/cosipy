@@ -12,7 +12,7 @@ spec["temperature"] = float64
 spec["liquid_water_content"] = float64
 spec["ice_fraction"] = float64
 spec["refreeze"] = float64
-spec["grain_size"] = float64
+
 
 @jitclass(spec)
 class Node:
@@ -312,14 +312,12 @@ class DebrisNode:
         height: float,
         debris_density: float,
         temperature: float,
-        grain_size: float,
         liquid_water_content: float = 0.0,
         ice_fraction: float = None,
     ):
         # Initialize state variables
         self.height = height
         self.temperature = temperature
-        self.grain_size = grain_size
         self.liquid_water_content = liquid_water_content
 
         if ice_fraction is None:
@@ -360,16 +358,6 @@ class DebrisNode:
             Debris layer temperature [:math:`K`].
         """
         return self.temperature
-
-    def get_layer_grain_size(self) -> float:
-        """Get the node's debris grain size.
-
-        Returns
-        -------
-        float
-            Debris grain size [:math:`mm`].
-        """
-        return self.grain_size
 
     def get_layer_ice_fraction(self) -> float:
         """Get the node's volumetric ice fraction.
@@ -443,7 +431,8 @@ class DebrisNode:
             porosity = constants.debris_packing_porosity
         else:
             porosity = (
-                constants.debris_packing_porosity * constants.debris_void_porosity
+                constants.debris_packing_porosity
+                * constants.debris_void_porosity
             )
 
         return max(0.0, porosity)
@@ -488,7 +477,8 @@ class DebrisNode:
         """
         if self.get_layer_ice_fraction() <= 0.23:
             theta_e = 0.0264 + 0.0099 * (
-                (1 - self.get_layer_ice_fraction()) / self.get_layer_ice_fraction()
+                (1 - self.get_layer_ice_fraction())
+                / self.get_layer_ice_fraction()
             )
         elif (self.get_layer_ice_fraction() > 0.23) & (
             self.get_layer_ice_fraction() <= 0.812
