@@ -114,7 +114,7 @@ debris_packing_porosity = 0.2596  # Volumetrically-weighted! 0.2596 for rombohed
 # TC, TD, and Cp are related: Cp = TC / (TD * rho). Scale values to 273.15 K.
 thermal_conductivity_debris =  5.4 # debris thermal conductivity (dolomite, Fuchs 2015) [W m-1 K-1].
 thermal_diffusivity_debris =  2.16  # debris thermal diffusivity (dolomite, Fuchs 2015) [10^-6 m^2 s-1]
-spec_heat_debris = 870 # debris specific heat capacity (dolomite, Fuchs 2015) [J kg-1 K-1]
+spec_heat_debris = 870.0 # debris specific heat capacity (dolomite, Fuchs 2015) [J kg-1 K-1]
 
 # Debris void filler: fills interstitial spaces in the debris matrix. Not fully implemented!
 debris_void_porosity = 1.0  # Porosity of material filling debris void. Set to "1.0" for air.
