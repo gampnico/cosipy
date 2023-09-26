@@ -1,634 +1,808 @@
-from collections import OrderedDict
-
 import numpy as np
-from numba import float64
-from numba.experimental import jitclass
+from numba import float64, njit, optional
+from numba.core import types
+from numba.experimental import structref
+from numba.extending import overload, overload_method, register_jitable
 
+import config
 import constants
 
-spec = OrderedDict()
-spec["height"] = float64
-spec["temperature"] = float64
-spec["liquid_water_content"] = float64
-spec["ice_fraction"] = float64
-spec["refreeze"] = float64
+
+@structref.register
+class NodeTypeRef(types.StructRef):
+    """Defines the type of reference structure used for `Node`."""
+
+    def preprocess_fields(self, fields: dict) -> tuple:
+        """Preprocess fields.
+
+        Called by the type constructor for additional preprocessing on
+        the fields. Struct shouldn't take Literal types.
+
+        Args:
+            fields: Attribute names and corresponding Literal types.
+
+        Returns:
+            Attribute names and corresponding base types.
+        """
+
+        return tuple((name, types.unliteral(typ)) for name, typ in fields)
 
 
-@jitclass(spec)
-class Node:
+class Node(structref.StructRefProxy):
     """A `Node` class stores a layer's state variables.
-    
+
     The numerical grid consists of a list of nodes which store the
     information of individual layers. The class provides various
     setter/getter functions to read or overwrite the state of these
-    individual layers. 
+    individual layers.
 
-    Attributes
-    ----------
-    height : float
-        Layer height [:math:`m`].
-    snow_density : float
-        Layer snow density [:math:`kg~m^{-3}`].
-    temperature: float
-        Layer temperature [:math:`K`].
-    liquid_water_content : float
-        Liquid water content [:math:`m~w.e.`].
-    ice_fraction : float
-        Volumetric ice fraction [-].
-    refreeze : float
-        Amount of refrozen liquid water [:math:`m~w.e.`].
+    If you add any new attributes or methods, ensure these are correctly
+    defined or overloaded in their respective sections below
+    ("Caching/Overload" and "Numba-Python Interfacing").
 
-    Returns
-    -------
-    Node : :py:class:`cosipy.cpkernel.node` object.
+    Attributes:
+        height (float): Layer height [:math:`m`].
+        density (float): Layer snow density [:math:`kg~m^{-3}`].
+        temperatur (float): Layer temperature [:math:`K`].
+        liquid_water_content (float): Liquid water content
+            [:math:`m~w.e.`].
+        ice_fraction (float): Volumetric ice fraction [-].
+        refreeze (float): Amount of refrozen liquid water
+            [:math:`m~w.e.`].
     """
 
-    def __init__(
-        self,
-        height: float,
-        snow_density: float,
-        temperature: float,
-        liquid_water_content: float,
-        ice_fraction: float = None,
+    def __new__(
+        cls,
+        height: float64,
+        density: float64,
+        temperature: float64,
+        liquid_water_content: float64,
+        ice_fraction: optional(float64),
     ):
-        # Initialises state variables.
-        self.height = height
-        self.temperature = temperature
-        self.liquid_water_content = liquid_water_content
+        """Overrides __new__.
 
-        if ice_fraction is None:
-            # Remove weight of air from density
-            a = snow_density - (1 - (snow_density / constants.ice_density)) * constants.air_density
-            self.ice_fraction = a / constants.ice_density
-        else:
-            self.ice_fraction = ice_fraction
-
-        self.refreeze = 0.0
-
-
-    """GETTER FUNCTIONS"""
-
-    # -----------------------------------------
-    # Getter-functions for state variables
-    # -----------------------------------------
-    def get_layer_height(self) -> float:
-        """Gets the node's layer height.
-        
-        Returns
-        -------
-        height : float
-            Snow layer height [:math:`m`].
+        Required for implementing mutable reference structures. Should
+        not override __init__.
         """
-        return self.height
 
-    def get_layer_temperature(self) -> float:
-        """Gets the node's snow layer temperature.
-        
-        Returns
-        -------
-        T : float
-            Snow layer temperature [:math:`K`].
-        """
-        return self.temperature
-
-    def get_layer_ice_fraction(self) -> float:
-        """Gets the node's volumetric ice fraction.
-        
-        Returns
-        -------
-        ice_fraction : float
-            The volumetric ice fraction [-].
-        """
-        return self.ice_fraction
-
-    def get_layer_refreeze(self) -> float:
-        """Gets the amount of refrozen water in the node.
-        
-        Returns
-        -------
-        refreeze : float
-            Amount of refrozen water per time step [:math:`m~w.e.`].
-        """
-        return self.refreeze
-
-    # ---------------------------------------------
-    # Getter-functions for derived state variables
-    # ---------------------------------------------
-    def get_layer_density(self) -> float:
-        """Gets the node's mean density including ice and liquid.
-
-        Returns
-        -------
-        rho : float
-            Snow density [:math:`kg~m^{-3}`].
-        """
-        return (
-            self.get_layer_ice_fraction() * constants.ice_density
-            + self.get_layer_liquid_water_content() * constants.water_density
-            + self.get_layer_air_porosity() * constants.air_density
+        self = Node_ctor(
+            height=height,
+            density=density,
+            temperature=temperature,
+            liquid_water_content=liquid_water_content,
+            ice_fraction=ice_fraction,
         )
 
-    def get_layer_air_porosity(self) -> float:
-        """Gets the fraction of air in the node.
-
-        Returns
-        -------
-        porosity : float
-            Air porosity [:math:`m`].
-        """
-        return max(0.0, 1 - self.get_layer_liquid_water_content() - self.get_layer_ice_fraction())
-
-    def get_layer_specific_heat(self) -> float:
-        """Gets the node's volumetric averaged specific heat capacity.
-
-        Returns
-        -------
-        cp : float
-            Specific heat capacity [:math:`J~kg^{-1}~K^{-1}`].
-        """
-        return self.get_layer_ice_fraction()*constants.spec_heat_ice + self.get_layer_air_porosity()*constants.spec_heat_air + self.get_layer_liquid_water_content()*constants.spec_heat_water
-
-    def get_layer_liquid_water_content(self) -> float:
-        """Gets the node's liquid water content.
-
-        Returns
-        -------
-        lwc : float
-            Liquid water content [-].
-        """
-        return self.liquid_water_content
-
-    def get_layer_irreducible_water_content(self) -> float:
-        """Gets the node's irreducible water content.
-
-        Returns
-        -------
-        ret : float
-            Irreducible water content [-].
-        """
-        if self.get_layer_ice_fraction() <= 0.23:
-            theta_e = 0.0264 + 0.0099*((1-self.get_layer_ice_fraction())/self.get_layer_ice_fraction())
-        elif (self.get_layer_ice_fraction() > 0.23) & (self.get_layer_ice_fraction() <= 0.812):
-            theta_e = 0.08 - 0.1023*(self.get_layer_ice_fraction()-0.03)
-        else:
-            theta_e = 0.0
-        return theta_e
-
-    def get_layer_cold_content(self) -> float:
-        """Gets the node's cold content.
-
-        Returns
-        -------
-        cc : float
-            Cold content [:math:`J~m^{-2}`].
-        """
-        return -self.get_layer_specific_heat() * self.get_layer_density() * self.get_layer_height() * (self.get_layer_temperature()-constants.zero_temperature)
-
-    def get_layer_porosity(self) -> float:
-        """Gets the node's porosity.
-
-        Returns
-        -------
-        porosity : float
-            Air porosity [-].
-        """
-        return 1-self.get_layer_ice_fraction()-self.get_layer_liquid_water_content()
-
-    def get_layer_thermal_conductivity(self) -> float:
-        """Gets the node's volumetric weighted thermal conductivity.
-
-        Returns
-        -------
-        lam : float
-            Thermal conductivity [:math:`W~m^{-1}~K^{-1}`].
-        """
-        methods_allowed = ['bulk', 'empirical']
-        if constants.thermal_conductivity_method == 'bulk':
-            lam = self.get_layer_ice_fraction()*constants.k_i + self.get_layer_air_porosity()*constants.k_a + self.get_layer_liquid_water_content()*constants.k_w
-        elif constants.thermal_conductivity_method == 'empirical':
-            lam = 0.021 + 2.5 * np.power((self.get_layer_density()/1000),2)
-        else:
-            message = ("Thermal conductivity method =",
-                       f"{constants.thermal_conductivity_method}",
-                       f"is not allowed, must be one of",
-                       f"{', '.join(methods_allowed)}")
-            raise ValueError(" ".join(message))
-        return lam
-
-    def get_layer_thermal_diffusivity(self) -> float:
-        """Gets the node's thermal diffusivity.
-
-        Returns
-        -------
-        K : float
-            Thermal diffusivity [:math:`m^{2}~s^{-1}`].
-        """
-        K = self.get_layer_thermal_conductivity()/(self.get_layer_density()*self.get_layer_specific_heat())
-        return K
-
-    """SETTER FUNCTIONS"""
-
-    # ---------------------------------------------
-    # Setter-functions for derived state variables
-    # ---------------------------------------------
-    def set_layer_height(self, height: float):
-        """Sets the node's layer height.
-        
-        Parameters
-        ----------
-        height : float
-            Layer height [:math:`m`].
-        """
-        self.height = height
-
-    def set_layer_temperature(self, T: float):
-        """Sets the node's mean temperature.
-
-        Parameters
-        ----------
-        T : float
-            Layer temperature [:math:`K`].
-        """
-        self.temperature = T
-
-    def set_layer_liquid_water_content(self, lwc: float):
-        """Sets the node's liquid water content.
-
-        Parameters
-        ----------
-        lwc : float
-            Liquid water content [-].
-        """
-        self.liquid_water_content = lwc
-
-    def set_layer_ice_fraction(self, ifr: float):
-        """Sets the node's volumetric ice fraction.
-
-        Parameters
-        ----------
-        ifr : float
-            Volumetric ice fraction [-].
-        """
-        self.ice_fraction = ifr
-
-    def set_layer_refreeze(self, refr: float):
-        """Sets the amount of refrozen water in the node.
-
-        Parameters
-        ----------
-        refr : float
-            Amount of refrozen water [:math:`m~w.e.`].
-        """
-        self.refreeze = refr
-
-
-# disable numba compilation until workaround found for pytest parametrization
-# @jitclass(spec)
-class DebrisNode:
-    """Stores the state variables of a debris layer.
-
-    The numerical grid consists of a list of nodes that store the
-    information of individual debris layers. The class provides various
-    setter/getter functions to read or overwrite the state of an
-    individual debris layer.
-
-    Attributes such as liquid water content/ice fraction are retained in
-    case of future extensions for wet debris cover.
-
-    Attributes
-    ----------
-    height : float
-        Height of the debris layer [:math:`m`].
-    density : float
-        Debris density [:math:`kg~m^{-3}`].
-    temperature : float
-        Debris layer temperature [:math:`K`].
-    liquid_water_content : float
-        Liquid water content [:math:`m~w.e.`].
-    """
+        return self
 
     def __init__(
         self,
-        height: float,
-        debris_density: float,
-        temperature: float,
-        liquid_water_content: float = 0.0,
-        ice_fraction: float = None,
+        height: float64,
+        density: float64,
+        temperature: float64,
+        liquid_water_content: float64,
+        ice_fraction: optional(float64) = None,
     ):
-        # Initialize state variables
-        self.height = height
-        self.temperature = temperature
-        self.liquid_water_content = liquid_water_content
+        """Initialise state & dynamic variables.
 
-        if ice_fraction is None:
-            # Remove weight of air from density
-            # a = (
-            #     debris_density
-            #     - (1 - (debris_density / constants.debris_density))
-            #     * constants.air_density
-            # )
-            # self.ice_fraction = a / constants.ice_density
-            self.ice_fraction = 0.0
-        else:
-            self.ice_fraction = ice_fraction
+        Ensure these are not overwritten by the constructor.
+        """
+        self.set_layer_ice_fraction(_init_ice_fraction(ice_fraction, density))
+        self.set_layer_refreeze(0.0)
 
-        self.refreeze = 0.0
+    # Define attributes
+    @property
+    def height(self) -> float64:
+        return self.get_layer_height()
 
-    """GETTER FUNCTIONS"""
+    @height.setter
+    def height(self, value: float64) -> None:
+        self.set_layer_height(value)
 
-    # ------------------------------------------
+    @property
+    def temperature(self) -> float64:
+        return self.get_layer_temperature()
+
+    @temperature.setter
+    def temperature(self, value: float64) -> None:
+        self._temperature = value
+
+    @property
+    def liquid_water_content(self) -> float64:
+        return self.get_layer_liquid_water_content()
+
+    @liquid_water_content.setter
+    def liquid_water_content(self, value: float64) -> None:
+        self._liquid_water_content = value
+
+    @property
+    def ice_fraction(self) -> optional(float64):
+        return self.get_layer_ice_fraction()
+
+    @ice_fraction.setter
+    def ice_fraction(self, value: optional(float64)) -> None:
+        self._ice_fraction = value
+
+    @property
+    def refreeze(self) -> float64:
+        return self.get_layer_refreeze()
+
+    @refreeze.setter
+    def refreeze(self, value: float64) -> None:
+        self.set_layer_refreeze(value)
+
+    """GETTER FUNCTIONS
+
+    Njit and overload methods to maintain jitclass-compatibility.
+    """
+
+    # -----------------------------------------
     # Getter-functions for state variables
-    # ------------------------------------------
-    def get_layer_height(self) -> float:
+    # -----------------------------------------
+
+    @njit(cache=True)
+    def get_layer_height(self) -> float64:
         """Get the node's layer height.
 
-        Returns
-        -------
-        float
-            Debris layer height [:math:`m`].
+        Returns:
+            Snow layer height [:math:`m`].
         """
-        return self.height
+        return Node_get_layer_height(self)
 
-    def get_layer_temperature(self) -> float:
-        """Get the node's layer temperature.
+    @njit(cache=True)
+    def get_layer_temperature(self) -> float64:
+        """Get the node's snow layer temperature.
 
-        Returns
-        -------
-        float
-            Debris layer temperature [:math:`K`].
+        Returns:
+            Snow layer temperature [:math:`K`].
         """
-        return self.temperature
+        return Node_get_layer_temperature(self)
 
-    def get_layer_ice_fraction(self) -> float:
+    @njit(cache=True)
+    def get_layer_ice_fraction(self) -> optional(float64):
         """Get the node's volumetric ice fraction.
 
-        Returns
-        -------
-        float
-            Volumetric ice fraction [-].
+        Returns:
+            The volumetric ice fraction [-].
         """
-        return self.ice_fraction
+        return Node_get_layer_ice_fraction(self)
 
-    def get_layer_refreeze(self) -> float:
-        """Get the amount of refrozen water in the node.
-
-        Returns
-        -------
-        float
-            Amount of refrozen water per time step [:math:`m~w.e.`].
-        """
-        return self.refreeze
-
-    # ----------------------------------------------
-    # Getter-functions for derived state variables
-    # ----------------------------------------------
-    def get_layer_density(self) -> float:
-        """Get the node's mean density including air and interstices.
-
-        The density includes the clast material, the material filling
-        the void between clasts, and the air in both clast and void
-        filler pores.
-
-        Returns
-        -------
-        float
-            Debris density [:math:`kg~m^{-3}`].
-        """
-
-        if constants.debris_void_porosity >= 1.0:
-            density = (
-                self.get_layer_porosity() * constants.air_density
-                + (1 - constants.debris_packing_porosity)
-                * constants.debris_porosity
-                * constants.debris_density  # clast density
-                + (1 - self.get_layer_air_porosity())
-                * constants.debris_void_density  # void filler density
-            )
-        else:
-            density = (
-                self.get_layer_porosity() * constants.air_density
-                + (1 - self.get_layer_porosity()) * constants.debris_density
-            )
-        return density
-
-    def get_layer_air_porosity(self) -> float:
-        """Get the node's volumetrically-weighted interstitial void porosity.
-
-        The function's name is kept as `get_layer_air_porosity` for
-        cross-compatibility with other Node objects.
-
-        Does NOT include the debris' porosity, and assumes no liquid.
-        Note that the packing and void porosities are
-        volumetrically-weighted!
-
-        Returns
-        -------
-        float
-            Interstitial void porosity [-].
-        """
-
-        if constants.debris_void_porosity >= 1.0:  # filled with air
-            porosity = constants.debris_packing_porosity
-        else:
-            porosity = (
-                constants.debris_packing_porosity
-                * constants.debris_void_porosity
-            )
-
-        return max(0.0, porosity)
-
-    def get_layer_specific_heat(self) -> float:
-        """Get the node's volumetric averaged specific heat capacity.
-
-        Returns
-        -------
-        float
-            Specific heat capacity [:math:`J~kg^{-1}~K^{-1}`].
-        """
-
-        if constants.debris_void_porosity >= 1.0:
-            cp = self.get_layer_air_porosity() * constants.spec_heat_air + (
-                1 - self.get_layer_air_porosity()
-            ) * (constants.spec_heat_debris)
-
-        else:
-            cp = self.get_layer_air_porosity() * constants.spec_heat_air
-            +(1 - self.get_layer_air_porosity()) * constants.spec_heat_debris
-
-        return cp
-
-    def get_layer_liquid_water_content(self) -> float:
+    @njit(cache=True)
+    def get_layer_liquid_water_content(self) -> float64:
         """Get the node's liquid water content.
 
-        Returns
-        -------
-        float
+        Returns:
             Liquid water content [-].
         """
-        return self.liquid_water_content
+        return Node_get_layer_liquid_water_content(self)
 
-    def get_layer_irreducible_water_content(self) -> float:
+    @njit(cache=True)
+    def get_layer_refreeze(self) -> float64:
+        """Get the amount of refrozen water in the node.
+
+        Returns:
+            Amount of refrozen water per time step [:math:`m~w.e.`].
+        """
+        return Node_get_layer_refreeze(self)
+
+    # ---------------------------------------------
+    # Getter-functions for derived state variables
+    # ---------------------------------------------
+
+    @njit(cache=True)
+    def get_layer_density(self) -> float64:
+        """Get the node's mean density including ice and liquid.
+
+        Returns:
+            Snow density [:math:`kg~m^{-3}`].
+        """
+        return Node_get_layer_density(self)
+
+    @njit(cache=True)
+    def get_layer_air_porosity(self) -> float64:
+        """Get the fraction of air in the node.
+
+        Returns:
+            Air porosity [:math:`m`].
+        """
+        return Node_get_layer_air_porosity(self)
+
+    @njit(cache=True)
+    def get_layer_specific_heat(self) -> float64:
+        """Get the node's volumetrically averaged specific heat capacity.
+
+        Returns:
+            Specific heat capacity [:math:`J~kg^{-1}~K^{-1}`].
+        """
+        return Node_get_layer_specific_heat(self)
+
+    @njit(cache=True)
+    def get_layer_irreducible_water_content(self) -> float64:
         """Get the node's irreducible water content.
 
-        Returns
-        -------
-        float
+        Returns:
             Irreducible water content [-].
         """
-        if self.get_layer_ice_fraction() <= 0.23:
-            theta_e = 0.0264 + 0.0099 * (
-                (1 - self.get_layer_ice_fraction())
-                / self.get_layer_ice_fraction()
-            )
-        elif (self.get_layer_ice_fraction() > 0.23) & (
-            self.get_layer_ice_fraction() <= 0.812
-        ):
-            theta_e = 0.08 - 0.1023 * (self.get_layer_ice_fraction() - 0.03)
-        else:
-            theta_e = 0.0
-        return theta_e
+        return Node_get_layer_irreducible_water_content(self)
 
-    def get_layer_cold_content(self) -> float:
+    @njit(cache=True)
+    def get_layer_cold_content(self) -> float64:
         """Get the node's cold content.
 
-        Returns
-        -------
-        float
+        Returns:
             Cold content [:math:`J~m^{-2}`].
         """
-        return (
-            -self.get_layer_specific_heat()
-            * self.get_layer_density()
-            * self.get_layer_height()
-            * (self.get_layer_temperature() - constants.zero_temperature)
-        )
+        return Node_get_layer_cold_content(self)
 
-    def get_layer_porosity(self) -> float:
+    @njit(cache=True)
+    def get_layer_porosity(self) -> float64:
         """Get the node's porosity.
 
-        Volumetrically-weighted average of the debris porosity and its
-        interstitial void porosity.
-
-        Returns
-        -------
-        float
-            Porosity [-].
+        Returns:
+            Air porosity [-].
         """
+        return Node_get_layer_porosity(self)
 
-        porosity = (
-            1 - constants.debris_packing_porosity
-        ) * constants.debris_porosity + self.get_layer_air_porosity()
+    def get_layer_thermal_conductivity(self) -> float64:
+        """Get the node's volumetrically weighted thermal conductivity.
 
-        return porosity
-
-    def get_layer_thermal_conductivity(self) -> float:
-        """Gets the node's thermal conductivity at ambient temperature.
-
-        The debris' thermal conductivity at 273.15 K should be set in
-        constants.py, as it varies between lithologies.
-
-        Equation is from Vosteen & Schellschmidt (2003).
-
-        Returns
-        -------
-        float
+        Returns:
             Thermal conductivity [:math:`W~m^{-1}~K^{-1}`].
         """
+        return Node_get_layer_thermal_conductivity(self)
 
-        methods_allowed = ["sedimentary", "crystalline"]
-        porosity = self.get_layer_air_porosity()
-
-        if constants.debris_structure not in methods_allowed:
-            message = (
-                f'"{constants.debris_structure}" debris structure',
-                f"is not allowed, must be one of",
-                f'{", ".join(methods_allowed)}',
-            )
-            raise ValueError(message)
-        elif constants.debris_structure == "sedimentary":
-            a = 0.0034
-            b = 0.0039
-        elif constants.debris_structure == "crystalline":
-            a = 0.0030
-            b = 0.0042
-
-        conductivity = (1 - porosity) * (
-            constants.thermal_conductivity_debris * 0.99
-            + self.get_layer_temperature()
-            * (a - (b / constants.thermal_conductivity_debris))
-        ) + (porosity * constants.k_a)
-
-        return conductivity
-
-    def get_layer_thermal_diffusivity(self) -> float:
+    def get_layer_thermal_diffusivity(self) -> float64:
         """Get the node's thermal diffusivity.
 
-        Returns
-        -------
-        float
+        Returns:
             Thermal diffusivity [:math:`m^{2}~s^{-1}`].
         """
+        return Node_get_layer_thermal_diffusivity(self)
 
-        if constants.debris_structure == "crystalline":
-            # Vosteen & Schellschmidt (2003)
-            K = 0.45 * self.get_layer_thermal_conductivity()
-        else:
-            K = self.get_layer_thermal_conductivity() / (
-                self.get_layer_density() * self.get_layer_specific_heat()
-            )
-        return K
+    """SETTER FUNCTIONS
 
-    """SETTER FUNCTIONS"""
+    Njit and overload methods to maintain jitclass-compatibility.
+    """
 
-    # ----------------------------------------------
+    # ---------------------------------------------
     # Setter-functions for derived state variables
-    # ----------------------------------------------
-    def set_layer_height(self, height) -> None:
-        """Sets the node's layer height.
+    # ---------------------------------------------
 
-        Parameters
-        ----------
-        float
-            Layer height [:math:`m`].
+    @njit(cache=True)
+    def set_layer_height(self, height: float64):
+        """Set the node's layer height.
+
+        Args:
+            height: Layer height [:math:`m`].
         """
         self.height = height
 
-    def set_layer_temperature(self, T) -> None:
-        """Sets the node's mean temperature.
+    @njit(cache=True)
+    def set_layer_temperature(self, T: float64):
+        """Set the node's mean temperature.
 
-        Parameters
-        ----------
-        float
-            Layer temperature [:math:`K`].
+        Args:
+            T: Layer temperature [:math:`K`].
         """
         self.temperature = T
 
-    def set_layer_liquid_water_content(self, lwc) -> None:
-        """Sets the node's liquid water content.
+    @njit(cache=True)
+    def set_layer_liquid_water_content(self, lwc: float64):
+        """Set the node's liquid water content.
 
-        Parameters
-        ----------
-        float
-            Liquid water content [-].
+        Args:
+            lwc: Liquid water content [-].
         """
         self.liquid_water_content = lwc
 
-    def set_layer_ice_fraction(self, ifr) -> None:
-        """Sets the node's ice fraction.
+    @njit(cache=True)
+    def set_layer_ice_fraction(self, ifr: float64):
+        """Set the node's volumetric ice fraction.
 
-        Parameters
-        ----------
-        float
-            Ice fraction [-].
+        Args:
+            ifr: Volumetric ice fraction [-].
         """
         self.ice_fraction = ifr
 
-    def set_layer_refreeze(self, refr) -> None:
-        """Sets the amount of refrozen water in the node.
+    @njit(cache=True)
+    def set_layer_refreeze(self, refr: float64):
+        """Set the amount of refrozen water in the node.
 
-        Parameters
-        ----------
-        float
-            Amount of refrozen water [:math:`m~w.e.`].
+        Args:
+            refr: Amount of refrozen water [:math:`m~w.e.`].
         """
         self.refreeze = refr
+
+
+"""CACHING/OVERLOAD
+
+Define cached or overloaded methods here.
+"""
+
+
+# Internal methods
+@njit(cache=True)
+def _init_ice_fraction(
+    ice_fraction: optional(float64), density: float64
+) -> float64:
+    """Initialise node ice fraction.
+
+    Args:
+        ice_fraction: Volumetric ice fraction [-].
+        density: Layer density [:math:`kg~m^{-3}`].
+
+    Returns:
+        Volumetric ice fraction [-].
+    """
+    if ice_fraction is None:
+        # Remove weight of air from density
+        a = (
+            density
+            - (1 - (density / constants.ice_density)) * constants.air_density
+        )
+        ice_fraction = a / constants.ice_density
+    else:
+        ice_fraction = ice_fraction
+
+    return ice_fraction
+
+
+"""Overload get/set methods for state attributes.
+
+1. Define an njitted function.
+2. Link the class method to use the njitted function.
+3. Overload the method with the njitted function.
+"""
+
+
+@njit(cache=True)
+def Node_get_layer_height(self) -> float64:
+    return self.height
+
+
+@overload_method(NodeTypeRef, "get_layer_height")
+def ol_get_layer_height(self):
+    def impl(self):
+        return Node_get_layer_height(self)
+
+    return impl
+
+
+@overload_method(NodeTypeRef, "set_layer_height")
+def ol_set_layer_height(self, value: float64):
+    def impl(self, value: float64):
+        self.height = value
+
+    return impl
+
+
+@njit(cache=True)
+def Node_get_layer_temperature(self) -> float64:
+    return self.temperature
+
+
+@overload_method(NodeTypeRef, "get_layer_temperature")
+def ol_get_layer_temperature(self):
+    def impl(self):
+        return Node_get_layer_temperature(self)
+
+    return impl
+
+
+@overload_method(NodeTypeRef, "set_layer_temperature")
+def ol_set_layer_temperature(self, value: float64):
+    def impl(self, value: float64):
+        self.temperature = value
+
+    return impl
+
+
+@njit(cache=True)
+def Node_get_layer_ice_fraction(self) -> float64:
+    return self.ice_fraction
+
+
+@overload_method(NodeTypeRef, "get_layer_ice_fraction")
+def ol_get_layer_ice_fraction(self):
+    def impl(self):
+        return Node_get_layer_ice_fraction(self)
+
+    return impl
+
+
+@overload_method(NodeTypeRef, "set_layer_ice_fraction")
+def ol_set_layer_ice_fraction(self, value: float64):
+    def impl(self, value: float64):
+        self.ice_fraction = value
+
+    return impl
+
+
+@njit(cache=True)
+def Node_get_layer_liquid_water_content(self) -> float64:
+    return self.liquid_water_content
+
+
+@overload_method(NodeTypeRef, "get_layer_liquid_water_content")
+def ol_get_layer_liquid_water_content(self):
+    def impl(self):
+        return Node_get_layer_liquid_water_content(self)
+
+    return impl
+
+
+@overload_method(NodeTypeRef, "set_layer_liquid_water_content")
+def ol_set_layer_liquid_water_content(self, value: float64):
+    def impl(self, value: float64):
+        self.liquid_water_content = value
+
+    return impl
+
+
+@njit(cache=True)
+def Node_get_layer_refreeze(self) -> float64:
+    return self.refreeze
+
+
+@overload_method(NodeTypeRef, "get_layer_refreeze")
+def ol_get_layer_refreeze(self):
+    def impl(self):
+        return Node_get_layer_refreeze(self)
+
+    return impl
+
+
+@overload_method(NodeTypeRef, "set_layer_refreeze")
+def ol_set_layer_refreeze(self, value: float64):
+    def impl(self, value: float64):
+        self.refreeze = value
+
+    return impl
+
+
+"""Overload get/set methods for derived state variables.
+
+1. Define an njitted function. Class properties (`self.foo`) are
+   supported, but class methods (`self.get_foo()`) raise a signature
+   error.
+2. Link the class method to use the njitted function.
+3. Overload the method with the njitted function.
+"""
+
+
+@njit(cache=True)
+def Node_get_layer_air_porosity(self) -> float64:
+    """Get the fraction of air in the node.
+
+    Returns:
+        Air porosity [:math:`m`].
+    """
+    porosity = max(0.0, 1 - self.liquid_water_content - self.ice_fraction)
+
+    return porosity
+
+
+@overload_method(NodeTypeRef, "get_layer_air_porosity")
+def ol_get_layer_air_porosity(self):
+    def impl(self):
+        return Node_get_layer_air_porosity(self)
+
+    return impl
+
+
+@njit(cache=True)
+def Node_get_layer_density(self) -> float64:
+    """Get the node's mean density including ice and liquid.
+
+    Returns:
+        Snow density [:math:`kg~m^{-3}`].
+    """
+    return (
+        self.ice_fraction * constants.ice_density
+        + self.liquid_water_content * constants.water_density
+        + Node_get_layer_air_porosity(self) * constants.air_density
+    )
+
+
+@overload_method(NodeTypeRef, "get_layer_density")
+def ol_get_layer_density(self):
+    def impl(self):
+        return Node_get_layer_density(self)
+
+    return impl
+
+
+@njit(cache=True)
+def Node_get_layer_specific_heat(self):
+    """Get the node's volumetrically averaged specific heat capacity.
+
+    Returns:
+        Specific heat capacity [:math:`J~kg^{-1}~K^{-1}`].
+    """
+    return (
+        self.ice_fraction * constants.spec_heat_ice
+        + Node_get_layer_air_porosity(self) * constants.spec_heat_air
+        + self.liquid_water_content * constants.spec_heat_water
+    )
+
+
+@overload_method(NodeTypeRef, "get_layer_specific_heat")
+def ol_get_layer_specific_heat(self) -> float64:
+    def impl(self):
+        return Node_get_layer_specific_heat(self)
+
+    return impl
+
+
+@njit(cache=True)
+def Node_get_layer_irreducible_water_content(self) -> float64:
+    """Get the node's irreducible water content.
+
+    Returns:
+        Irreducible water content [-].
+    """
+    if self.ice_fraction <= 0.23:
+        theta_e = 0.0264 + 0.0099 * (
+            (1 - self.ice_fraction) / self.ice_fraction
+        )
+    elif (self.ice_fraction > 0.23) & (self.ice_fraction <= 0.812):
+        theta_e = 0.08 - 0.1023 * (self.ice_fraction - 0.03)
+    else:
+        theta_e = 0.0
+    return theta_e
+
+
+@overload_method(NodeTypeRef, "get_layer_irreducible_water_content")
+def ol_get_layer_irreducible_water_content(self) -> float64:
+    def impl(self):
+        return Node_get_layer_irreducible_water_content(self)
+
+    return impl
+
+
+@njit(cache=True)
+def Node_get_layer_cold_content(self) -> float64:
+    """Get the node's cold content.
+
+    Returns:
+        Cold content [:math:`J~m^{-2}`].
+    """
+    return (
+        -Node_get_layer_specific_heat(self)
+        * Node_get_layer_density(self)
+        * self.height
+        * (self.temperature - constants.zero_temperature)
+    )
+
+
+@overload_method(NodeTypeRef, "get_layer_cold_content")
+def ol_get_layer_cold_content(self) -> float64:
+    def impl(self):
+        return Node_get_layer_cold_content(self)
+
+    return impl
+
+
+@njit(cache=True)
+def Node_get_layer_porosity(self) -> float64:
+    """Get the node's porosity.
+
+    Returns:
+        Air porosity [-].
+    """
+    return 1 - self.ice_fraction - self.liquid_water_content
+
+
+@overload_method(NodeTypeRef, "get_layer_porosity")
+def ol_get_layer_porosity(self) -> float64:
+    def impl(self):
+        return Node_get_layer_porosity(self)
+
+    return impl
+
+
+@njit(cache=True)
+def Node_get_layer_thermal_conductivity(self) -> float64:
+    """Get the node's volumetrically weighted thermal conductivity.
+
+    Returns:
+        Thermal conductivity [:math:`W~m^{-1}~K^{-1}`].
+    """
+    methods_allowed = ["bulk", "empirical"]
+    if constants.thermal_conductivity_method == "bulk":
+        lam = (
+            self.ice_fraction * constants.k_i
+            + Node_get_layer_air_porosity(self) * constants.k_a
+            + self.liquid_water_content * constants.k_w
+        )
+    elif constants.thermal_conductivity_method == "empirical":
+        lam = 0.021 + 2.5 * np.power((Node_get_layer_density(self) / 1000), 2)
+    else:
+        message = (
+            "Thermal conductivity method =",
+            f"{constants.thermal_conductivity_method}",
+            f"is not allowed, must be one of",
+            f"{', '.join(methods_allowed)}",
+        )
+        raise ValueError(" ".join(message))
+    return lam
+
+
+@overload_method(NodeTypeRef, "get_layer_thermal_conductivity")
+def ol_get_layer_thermal_conductivity(self) -> float64:
+    def impl(self):
+        return Node_get_layer_thermal_conductivity(self)
+
+    return impl
+
+
+@njit(cache=True)
+def Node_get_layer_thermal_diffusivity(self) -> float64:
+    """Get the node's thermal diffusivity.
+
+    Returns:
+        Thermal diffusivity [:math:`m^{2}~s^{-1}`].
+    """
+    K = Node_get_layer_thermal_conductivity(self) / (
+        Node_get_layer_density(self) * Node_get_layer_specific_heat(self)
+    )
+    return K
+
+
+@overload_method(NodeTypeRef, "get_layer_thermal_diffusivity")
+def ol_get_layer_thermal_diffusivity(self) -> float64:
+    def impl(self):
+        return Node_get_layer_thermal_diffusivity(self)
+
+    return impl
+
+
+"""NUMBA-PYTHON INTERFACING
+
+Define attributes and constructors here.
+"""
+
+# Class attributes, including dynamic attributes
+fields = [
+    ("height", float64),
+    ("density", float64),
+    ("temperature", float64),
+    ("liquid_water_content", float64),
+    ("ice_fraction", optional(float64)),
+    ("refreeze", float64),
+]
+
+# register types and bind the proxy
+structref.define_proxy(Node, NodeTypeRef, [name[0] for name in fields])
+NodeType = NodeTypeRef(fields)
+
+
+@njit(cache=True)
+def Node_ctor(
+    height: float64,
+    density: float64,
+    temperature: float64,
+    liquid_water_content: float64,
+    ice_fraction: optional(float64),
+) -> Node:
+    """Constructor for Node class in clean-ice simulations.
+
+    Declaring dynamic attributes is not necessary.
+
+    Args:
+        height: Layer height [:math:`m`].
+        density: Layer snow density [:math:`kg~m^{-3}`].
+        temperature  Layer temperature [:math:`K`].
+        liquid_water_content: Liquid water content [:math:`m~w.e.`].
+        ice_fraction: Volumetric ice fraction [-].
+    """
+
+    self = structref.new(NodeType)
+    self.height = height
+    self.density = density
+    self.temperature = temperature
+    self.liquid_water_content = liquid_water_content
+    # letting __init__() handle this causes a TypeError as floats are expected
+    self.ice_fraction = _init_ice_fraction(ice_fraction, density)
+
+    return self
+
+
+@overload(Node)
+def ol_Node(
+    height: float64,
+    density: float64,
+    temperature: float64,
+    liquid_water_content: float64,
+    ice_fraction: optional(float64),
+):
+    """Override the constructor for Node."""
+
+    def implementation(
+        height: float64,
+        density: float64,
+        temperature: float64,
+        liquid_water_content: float64,
+        ice_fraction: optional(float64),
+    ) -> Node:
+        return Node_ctor(
+            height=height,
+            density=density,
+            temperature=temperature,
+            liquid_water_content=liquid_water_content,
+            ice_fraction=ice_fraction,
+        )
+
+    return implementation
+
+
+"""SELECT NODE TYPES"""
+
+if config.use_debris:  # override classes when implementing debris cover
+    # BaseNodeType = cosipy.cpkernel.proxies.BaseNodeType
+    # BaseNode = cosipy.cpkernel.proxies.BaseNode
+    # NodeType = cosipy.cpkernel.proxies.NodeType
+    # Node = cosipy.cpkernel.proxies.Node
+    # DebrisNodeType = cosipy.cpkernel.proxies.DebrisNodeType
+    # DebrisNode = cosipy.cpkernel.proxies.DebrisNode
+    print(f"\nRunning with debris cover.")
+else:
+    DebrisNode = None  # avoid dependency import errors
+
+"""HELPER FUNCTIONS
+
+Declare after the node type is selected so these don't refer to the
+default `Node`.
+"""
+
+
+@register_jitable
+def _init_empty_node() -> Node:
+    """Initialise an empty node, with all attributes set to 0 or None.
+
+    Use this in any `jitclass` to force Numba typing.
+
+    Returns:
+        An empty node with all attributes set to 0.0. Ice fraction is
+        set to None.
+    """
+    zero_node = Node(
+        height=0.0,
+        density=0.0,
+        temperature=0.0,
+        liquid_water_content=0.0,
+        ice_fraction=None,
+    )
+
+    return zero_node
+
+
+@njit(cache=True)
+@register_jitable
+def _create_node(
+    height: float64,
+    density: float64,
+    temperature: float64,
+    liquid_water_content: float64,
+    ice_fraction: optional(float64),
+) -> Node:
+    """Create a node from user data.
+
+    Inherited by `cpkernel.grid`, and can be used in any `jitclass`.
+
+    Args:
+        height: Layer height [:math:`m`].
+        density: Layer snow density [:math:`kg~m^{-3}`].
+        temperature  Layer temperature [:math:`K`].
+        liquid_water_content: Liquid water content [:math:`m~w.e.`].
+        ice_fraction: Volumetric ice fraction [-].
+    """
+    node = Node(
+        height=height,
+        density=density,
+        temperature=temperature,
+        liquid_water_content=liquid_water_content,
+        ice_fraction=ice_fraction,
+    )
+
+    return node

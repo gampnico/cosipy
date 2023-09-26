@@ -108,7 +108,7 @@ lejeune_weighting_coefficient = 0.33            # empirical weighting coefficien
 
 # Dolomitic debris
 debris_structure = "sedimentary"  # debris structure, e.g. sedimentary, crystalline.
-debris_density = 2840  # debris density [kg m-3] (Dolomite clasts, MinDat).
+debris_density = 2840.0  # debris density [kg m-3] (Dolomite clasts, MinDat).
 debris_porosity = 0.3  # debris porosity [-] (Supraglacial debris, Anderson & Anderson, 2016).
 debris_packing_porosity = 0.2596  # Volumetrically-weighted! 0.2596 for rombohedral packing, 0.4764 for cubic packing. 
 

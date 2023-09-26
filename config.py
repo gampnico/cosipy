@@ -98,3 +98,8 @@ xstart = 20
 xend = 40
 ystart = 20
 yend = 40
+
+#-----------------------------------
+# CPKERNEL
+#-----------------------------------
+use_debris = False                                          # Simulate with debris-cover

@@ -1,7 +1,7 @@
 import pytest
 
 import constants
-from cosipy.cpkernel.node import Node
+from cosipy.cpkernel.node import Node, _init_empty_node, _create_node
 
 
 class TestNodeGetter:
@@ -9,14 +9,14 @@ class TestNodeGetter:
 
     Attributes:
         height (float): Layer height [:math:`m`]
-        snow_density (float): Snow density [:math:`kg~m^{-3}`]
+        density (float): Snow density [:math:`kg~m^{-3}`]
         temperature (int): Layer temperature [:math:`K`]
         lwc (float): Liquid water content [:math:`m~w.e.`]
         ice_fraction (float): Volumetric ice fraction [-]
     """
 
     height = 0.1
-    snow_density = 200.0
+    density = 200.0
     temperature = 270.0
     lwc = 0.2
     ice_fraction = 0.4
@@ -26,7 +26,7 @@ class TestNodeGetter:
 
         test_node = Node(
             height=self.height,
-            snow_density=self.snow_density,
+            density=self.density,
             temperature=self.temperature,
             liquid_water_content=self.lwc,
             ice_fraction=self.ice_fraction,
@@ -35,9 +35,7 @@ class TestNodeGetter:
         assert isinstance(test_node, Node)
 
         conftest_boilerplate.check_output(
-            variable=test_node.temperature,
-            x_type=float,
-            x_value=self.temperature,
+            test_node.temperature, float, self.temperature
         )
         conftest_boilerplate.check_output(test_node.height, float, self.height)
         conftest_boilerplate.check_output(
@@ -45,13 +43,13 @@ class TestNodeGetter:
         )
         conftest_boilerplate.check_output(test_node.refreeze, float, 0.0)
         # conftest_boilerplate.check_output(
-        #     test_node.snow_density, float, self.snow_density
+        #     test_node.density, float, self.density
         # )
 
     def create_node(
         self,
         height: float = height,
-        snow_density: float = snow_density,
+        density: float = density,
         temperature: float = temperature,
         lwc: float = lwc,
         ice_fraction: float = ice_fraction,
@@ -60,7 +58,7 @@ class TestNodeGetter:
 
         node = Node(
             height=height,
-            snow_density=snow_density,
+            density=density,
             temperature=temperature,
             liquid_water_content=lwc,
             ice_fraction=ice_fraction,
@@ -126,8 +124,8 @@ class TestNodeGetter:
         node = self.create_node(ice_fraction=arg_ice_fraction)
         if arg_ice_fraction is None:
             test_ice_fraction = (
-                self.snow_density
-                - (1 - (self.snow_density / constants.ice_density))
+                self.density
+                - (1 - (self.density / constants.ice_density))
                 * constants.air_density
             ) / constants.ice_density
         else:
@@ -225,3 +223,39 @@ class TestNodeGetter:
             float,
             test_irreducible_water_content,
         )
+
+    def test_init_empty_node(self, conftest_boilerplate):
+        test_node = self.create_node()
+        compare_node = _init_empty_node()
+
+        assert isinstance(compare_node, Node)
+        conftest_boilerplate.check_output(
+            variable=test_node.temperature,
+            x_type=float,
+            x_value=self.temperature,
+        )
+        conftest_boilerplate.check_output(test_node.height, float, self.height)
+        conftest_boilerplate.check_output(
+            test_node.liquid_water_content, float, self.lwc
+        )
+        conftest_boilerplate.check_output(test_node.refreeze, float, 0.0)
+
+    def test_node_create_node(self, conftest_boilerplate):
+        test_node = self.create_node()
+        compare_node = _create_node(
+            height=self.height,
+            density=self.density,
+            temperature=self.temperature,
+            liquid_water_content=self.lwc,
+            ice_fraction=self.ice_fraction,
+        )
+
+        assert isinstance(compare_node, Node)
+        conftest_boilerplate.check_output(
+            test_node.temperature, float, self.temperature
+        )
+        conftest_boilerplate.check_output(test_node.height, float, self.height)
+        conftest_boilerplate.check_output(
+            test_node.liquid_water_content, float, self.lwc
+        )
+        conftest_boilerplate.check_output(test_node.refreeze, float, 0.0)

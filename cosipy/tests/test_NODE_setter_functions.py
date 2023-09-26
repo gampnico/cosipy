@@ -21,7 +21,7 @@ class TestNodeSetter:
 
     height = 0.1
     density = 200.0
-    temperature = 270
+    temperature = 270.0
     lwc = 0.3
     ice_fraction = 0.4
     new_height = 1.0
@@ -42,7 +42,7 @@ class TestNodeSetter:
 
         node = Node(
             height=height,
-            snow_density=density,
+            density=density,
             temperature=temperature,
             liquid_water_content=lwc,
             ice_fraction=ice_fraction,

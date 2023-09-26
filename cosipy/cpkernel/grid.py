@@ -2,62 +2,125 @@ import os
 from collections import OrderedDict
 
 import numpy as np
-from numba import float64, intp, optional, typed, types
+from numba import float64, intp, njit, optional, typed, types
 from numba.experimental import jitclass
+from numba.extending import register_jitable
 
 import config
 import constants
-from cosipy.cpkernel.node import Node
+from cosipy.cpkernel.node import Node, NodeType, _create_node
 
-node_type = Node.class_type.instance_type
 
-spec = OrderedDict()
-spec["layer_heights"] = float64[:]
-spec["layer_densities"] = float64[:]
-spec["layer_temperatures"] = float64[:]
-spec["layer_liquid_water_content"] = float64[:]
-spec["layer_ice_fraction"] = optional(float64[:])
-spec["number_nodes"] = intp
-spec["new_snow_height"] = float64
-spec["new_snow_timestamp"] = float64
-spec["old_snow_timestamp"] = float64
-spec["grid"] = types.ListType(node_type)
+@register_jitable
+def _init_node_type() -> NodeType:
+    """Initialises the node types used by Grid.grid.
+
+    Node type selection is automatically handled when importing
+    `cpkernel.node`.
+
+    Returns:
+        The base type for Node objects.
+
+    Raises:
+        NotImplementedError: Debris cover is not yet implemented.
+    """
+
+    if not config.use_debris:
+        node_type = NodeType
+    else:
+        raise NotImplementedError("Debris cover is not yet implemented.")
+
+    return node_type
+
+
+@register_jitable
+def _init_grid_type(node_type: NodeType) -> types.ListType:
+    """Initialises typed List used by Grid.grid.
+
+    Args:
+        node_type: A registered StructRefProxy type.
+    Returns:
+        The base List type for Grid objects.
+    """
+
+    grid_type = types.ListType(node_type)
+    return grid_type
+
+
+@register_jitable
+def _init_grid_jit_types() -> OrderedDict:
+    """Initialise numba types for JIT-compiled Grid objects.
+
+    Returns:
+        Numba types for Grid objects, including node type.
+    """
+
+    spec = OrderedDict()  # Using `spec.update` is slower than adding keys.
+    spec["layer_heights"] = float64[:]
+    spec["layer_densities"] = float64[:]
+    spec["layer_temperatures"] = float64[:]
+    spec["layer_liquid_water_content"] = float64[:]
+    spec["layer_ice_fraction"] = optional(float64[:])
+    spec["number_nodes"] = intp
+    spec["new_snow_height"] = float64
+    spec["new_snow_timestamp"] = float64
+    spec["old_snow_timestamp"] = float64
+
+    node_type = _init_node_type()
+    grid_type = _init_grid_type(node_type)
+    spec["grid"] = grid_type
+
+    return spec
+
+
+spec = _init_grid_jit_types()
+
 
 @jitclass(spec)
 class Grid:
+    """The Grid class controls the numerical mesh.
+
+    The grid attribute consists of a list of nodes that each store
+    information on an individual layer. The class provides various
+    setter/getter functions to add, read, overwrite, merge, split,
+    update or re-mesh the layers.
+
+    Attributes
+    ----------
+    layer_heights : np.ndarray
+        Height of the snowpack layers [:math:`m`].
+    layer_densities : np.ndarray
+        Snow density of the snowpack layers [:math:`kg~m^{-3}`].
+    layer_temperatures : np.ndarray
+        Layer temperatures [:math:`K`].
+    layer_liquid_water_content : np.ndarray
+        Liquid water content of the layers [:math:`m~w.e.`].
+    layer_ice_fraction : np.ndarray
+        Volumetric ice fraction  of the layers [-]. Default None.
+    new_snow_height : float
+        Height of the fresh snow layer [:math:`m`]. Default None.
+    new_snow_timestamp : float
+        Time elapsed since the last snowfall [s]. Default None.
+    old_snow_timestamp : float
+        Time elapsed between the last and penultimate snowfalls [s].
+            Default None.
+    grid : typed.List
+        Numerical mesh for glacier data.
+    number_nodes : int
+        Number of layers in the numerical mesh.
+    """
+
     def __init__(
         self,
-        layer_heights,
-        layer_densities,
-        layer_temperatures,
-        layer_liquid_water_content,
-        layer_ice_fraction=None,
-        new_snow_height=None,
-        new_snow_timestamp=None,
-        old_snow_timestamp=None,
+        layer_heights: float64[:],
+        layer_densities: float64[:],
+        layer_temperatures: float64[:],
+        layer_liquid_water_content: float64[:],
+        layer_ice_fraction: optional(float64[:]) = None,
+        new_snow_height: float64 = None,
+        new_snow_timestamp: float64 = None,
+        old_snow_timestamp: float64 = None,
     ):
-        """The Grid-class controls the numerical mesh.
-
-        The grid consists of a list of nodes (layers) that store the
-        information of individual layers. The class provides various
-        setter/getter functions to add, read, overwrite, merge,
-        split, update or re-mesh the layers.
-
-        Attributes
-        ----------
-        layer_heights : np.ndarray
-            Height of the snowpack layers [:math:`m`].
-        layer_densities : np.ndarray
-            Snow density of the snowpack layers [:math:`kg~m^{-3}`].
-        layer_temperatures : np.ndarray
-            Layer temperatures [:math:`K`].
-        layer_liquid_water_content : np.ndarray
-            Liquid water content of the layers [:math:`m~w.e.`].
-
-        Returns
-        -------
-        Grid : :py:class:`cosipy.cpkernel.grid` object.
-        """
         # Set class variables
         self.layer_heights = layer_heights
         self.layer_densities = layer_densities
@@ -88,33 +151,18 @@ class Grid:
             self.new_snow_timestamp = 0.0
             self.old_snow_timestamp = 0.0
 
-        # Do the grid initialization
-        self.grid = typed.List.empty_list(node_type)
-
+        # Initialise the grid
         self.init_grid()
 
     def init_grid(self):
-        """Initialize the grid with according to the input data"""
-        # Fill the list with node instances and fill it with user defined data
-        for idxNode in range(self.number_nodes):
-            layer_IF = None
-            if self.layer_ice_fraction is not None:
-                layer_IF = self.layer_ice_fraction[idxNode]
-            self.grid.append(
-                Node(
-                    self.layer_heights[idxNode],
-                    self.layer_densities[idxNode],
-                    self.layer_temperatures[idxNode],
-                    self.layer_liquid_water_content[idxNode],
-                    layer_IF,
-                )
-            )
+        """Initialize the grid with the input data."""
+        _init_grid(self)
 
     def add_fresh_snow(
         self, height, density, temperature, liquid_water_content
     ):
         """Add a fresh snow layer (node).
-         
+
         Adds a fresh snow layer to the beginning of the node list (upper
         layer).
 
@@ -145,9 +193,11 @@ class Grid:
     def remove_node(self, idx: list = None):
         """Remove a layer (node) from the grid (node list).
 
-        Args:
-            idx: Indices of the node to be removed. If empty or None,
-                the first node is removed.
+        Parameters
+        ----------
+        idx: list
+            Indices of the node to be removed. If empty or None, the
+            first node is removed. Default None.
         """
 
         # Remove node from list when there is at least one node
@@ -358,7 +408,7 @@ class Grid:
 
         * The stretching factor is defined by `layer_stretching`.
         * The first layer height is defined by `first_layer_height`.
-        
+
         E.g. for the stretching factor, a value of 1.1 corresponds to a
         10% stretching from one layer to the next.
         """
@@ -1012,7 +1062,7 @@ class Grid:
 
     def grid_info_screen(self, n=-999):
         """Prints the state of the snowpack.
-        
+
         Parameters
         ----------
         n : int
@@ -1069,3 +1119,58 @@ class Grid:
                 np.nanmin(property),
             )
             os._exit()
+
+
+@njit(cache=True)
+def _create_node_at_idx(grid_obj: Grid, idxNode: int) -> Node:
+    """Create a node instance with user data at a specific grid index.
+
+    This function automatically hooks the appropriate constructor for
+    the node type selected in config.
+
+    Parameters
+    ----------
+    grid_obj : Grid
+        A new Grid instance with an empty `grid` attribute.
+    idxNode : int
+        Grid index of node.
+
+    Returns
+    -------
+    node : Node
+        Node containing the data passed by user arguments to Grid.
+    """
+
+    if grid_obj.layer_ice_fraction is not None:
+        layer_IF = grid_obj.layer_ice_fraction[idxNode]
+    else:
+        layer_IF = None
+
+    # let cpkernel.node handle node type overrides
+    node = _create_node(
+        grid_obj.layer_heights[idxNode],
+        grid_obj.layer_densities[idxNode],
+        grid_obj.layer_temperatures[idxNode],
+        grid_obj.layer_liquid_water_content[idxNode],
+        layer_IF,
+    )
+    return node
+
+
+@njit(cache=True)
+@register_jitable
+def _init_grid(grid_obj: Grid):
+    """Bind user data to the `grid` attribute.
+
+    Parameters
+    ----------
+    grid_obj : Grid
+        A new Grid instance with an empty `grid` attribute.
+    """
+    # do not assign node type, otherwise dynamic attrs cause ambiguous types
+    grid = typed.List()
+    # Fill the list with node instances containing user defined data
+    for idxNode in range(grid_obj.number_nodes):
+        fill_node = _create_node_at_idx(grid_obj, idxNode)
+        grid.append(fill_node)
+    grid_obj.grid = grid

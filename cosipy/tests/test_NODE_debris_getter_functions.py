@@ -5,6 +5,10 @@ import cosipy.cpkernel.node
 from cosipy.cpkernel.node import DebrisNode
 
 
+@pytest.mark.skipif(
+    not DebrisNode,
+    reason="DebrisNode disabled while converting to StructRef.",
+)
 class TestDebrisNodeGet:
     """Tests get methods for `DebrisNode`.
 

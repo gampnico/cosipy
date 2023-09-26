@@ -1,9 +1,12 @@
-import numpy as np
+import pytest
 
-# import constants
 from cosipy.cpkernel.node import DebrisNode
 
 
+@pytest.mark.skipif(
+    not DebrisNode,
+    reason="DebrisNode disabled while converting to StructRef.",
+)
 class TestNodeSetter:
     """Tests set methods for `DebrisNode`.
 

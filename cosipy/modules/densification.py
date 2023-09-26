@@ -22,7 +22,7 @@ def densification(GRID,SLOPE,dt):
     else:
         raise ValueError("Densification method = \"{:s}\" is not allowed, must be one of {:s}".format(densification_method, ", ".join(densification_allowed)))
 
-@njit
+# @njit(cache=True)
 def method_Boone(GRID,SLOPE,dt):
     """ Description: Densification through overburden pressure
         after Essery et al. 2013
