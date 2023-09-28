@@ -85,6 +85,10 @@ class TestGridUpdate:
         assert np.allclose(SWE_before_sum, SWE_after_sum, atol=1e-3)
         assert np.allclose(SWE_after_sum, SWE_after_adaptive_sum, atol=1e-3)
 
+
+class TestGridInteractions:
+    """Tests remeshing and interactions between layers."""
+
     @pytest.mark.parametrize("arg_height", [0.05, 0.1, 0.5])
     @pytest.mark.parametrize("arg_temperature", [273.16, 270.16, 280.0])
     @pytest.mark.parametrize("arg_lwc", [0.0, 0.5])

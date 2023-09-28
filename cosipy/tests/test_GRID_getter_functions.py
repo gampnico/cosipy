@@ -9,6 +9,8 @@ from cosipy.cpkernel.node import NodeType, _init_ice_fraction
 
 # import constants
 
+class TestGridSetup:
+    """Tests initialisation methods for Grid objects."""
 
 class TestGridSpecs:
     """Tests compilation of Grid JIT specs.
