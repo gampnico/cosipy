@@ -185,8 +185,7 @@ def fixture_conftest_mock_xr_dataset(
     """Constructs mock xarray Dataset of output .nc file.
 
     Returns:
-        Dataset with data for elevation and surface data. The data is of
-        shape ()
+        Dataset with data for elevation and surface data.
     """
 
     _ = conftest_rng_seed
@@ -454,6 +453,13 @@ class TestBoilerplate:
             raise TypeError(note)
         for key in new_params:
             monkeypatch.setattr(module, key, new_params[key])
+
+    # def patch_debris(self):
+    #     """Patch config to hook debris implementation."""
+
+        
+    #     monkeypatch = pytest.MonkeyPatch()
+    #     monkeypatch.setattr(config, "use_debris", True")
 
     def test_boilerplate_integration(self):
         """Integration test for boilerplate methods."""

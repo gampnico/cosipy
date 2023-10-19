@@ -5,8 +5,14 @@ import pytest
 from numba import float64, intp, optional, types
 
 import cosipy.cpkernel.grid as cpgrid
-from cosipy.cpkernel.node import NodeType
+from cosipy.cpkernel.node import BaseNodeType
 from cosipy.cpkernel.patch._node import Node_init_ice_fraction
+
+# import constants
+
+
+class TestGridSetup:
+    """Tests initialisation methods for Grid objects."""
 
 
 class TestGridSpecs:
@@ -17,12 +23,12 @@ class TestGridSpecs:
     """
 
     def test_init_node_type(self):
-        class_type = NodeType
+        class_type = BaseNodeType
         compare_type = cpgrid._init_node_type()
         assert isinstance(compare_type, type(class_type))
 
     def test_init_grid_type(self):
-        class_type = NodeType
+        class_type = BaseNodeType
         test_type = types.ListType(class_type)
         compare_type = cpgrid._init_grid_type(node_type=class_type)
         assert compare_type == test_type

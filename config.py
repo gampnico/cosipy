@@ -8,7 +8,7 @@
 #-----------------------------------
 # Zhadang
 time_start = '2009-01-01T06:00'
-time_end   = '2009-01-10T00:00'
+time_end   = '2010-01-01T06:00'
 
 # Hintereisferner
 #time_start = '2018-09-17T08:00'
@@ -23,7 +23,7 @@ time_end_str=(time_end[0:10]).replace('-','')
 data_path = './data/'
 
 # Zhadang example
-input_netcdf= 'Zhadang/Zhadang_ERA5_2009.nc'
+input_netcdf= 'Zhadang/Zhadang_ERA5_2009_2018.nc'
 output_netcdf = 'Zhadang_ERA5_'+time_start_str+'-'+time_end_str+'.nc'
 
 # Hintereisferner example
@@ -102,4 +102,5 @@ yend = 40
 #-----------------------------------
 # CPKERNEL
 #-----------------------------------
-use_debris = False                                          # Simulate with debris-cover
+use_debris = True                                          # Simulate with debris-cover
+use_cache = False                                          # Cache njitted functions to disk (<2 MB). Use with caution - cached functions won't rebind to a new value for a constant or global variable.

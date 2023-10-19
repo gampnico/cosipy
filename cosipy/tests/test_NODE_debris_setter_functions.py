@@ -48,7 +48,7 @@ class TestNodeSetter:
 
         node = DebrisNode(
             height=height,
-            debris_density=density,
+            density=density,
             temperature=temperature,
             liquid_water_content=lwc,
             ice_fraction=ice_fraction,
@@ -65,9 +65,7 @@ class TestNodeSetter:
         conftest_boilerplate.check_output(
             node.liquid_water_content, float, self.lwc
         )
-        conftest_boilerplate.check_output(
-            node.ice_fraction, float, self.ice_fraction
-        )
+        conftest_boilerplate.check_output(node.ice_fraction, float, 0.0)
         conftest_boilerplate.check_output(node.refreeze, float, 0.0)
 
     def test_node_set_layer_height(self, conftest_boilerplate):

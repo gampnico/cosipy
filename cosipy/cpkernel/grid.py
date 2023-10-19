@@ -8,33 +8,14 @@ from numba.extending import register_jitable
 
 import config
 import constants
-from cosipy.cpkernel.node import Node, NodeType, _create_node
+from cosipy.cpkernel.node import *  # contains node.__all__
+
+__all__ = ["Grid"]
+_NODE_TYPE = _init_node_type()  # else _init_grid can't access the correct type
 
 
 @register_jitable
-def _init_node_type() -> NodeType:
-    """Initialises the node types used by Grid.grid.
-
-    Node type selection is automatically handled when importing
-    `cpkernel.node`.
-
-    Returns:
-        The base type for Node objects.
-
-    Raises:
-        NotImplementedError: Debris cover is not yet implemented.
-    """
-
-    if not config.use_debris:
-        node_type = NodeType
-    else:
-        raise NotImplementedError("Debris cover is not yet implemented.")
-
-    return node_type
-
-
-@register_jitable
-def _init_grid_type(node_type: NodeType) -> types.ListType:
+def _init_grid_type(node_type) -> types.ListType:
     """Initialises typed List used by Grid.grid.
 
     Args:
@@ -66,8 +47,7 @@ def _init_grid_jit_types() -> OrderedDict:
     spec["new_snow_timestamp"] = float64
     spec["old_snow_timestamp"] = float64
 
-    node_type = _init_node_type()
-    grid_type = _init_grid_type(node_type)
+    grid_type = _init_grid_type(_NODE_TYPE)
     spec["grid"] = grid_type
 
     return spec
@@ -1121,7 +1101,7 @@ class Grid:
             os._exit()
 
 
-@njit(cache=True)
+@njit(cache=False)
 def _create_node_at_idx(grid_obj: Grid, idxNode: int) -> Node:
     """Create a node instance with user data at a specific grid index.
 
@@ -1157,7 +1137,6 @@ def _create_node_at_idx(grid_obj: Grid, idxNode: int) -> Node:
     return node
 
 
-@njit(cache=True)
 @register_jitable
 def _init_grid(grid_obj: Grid):
     """Bind user data to the `grid` attribute.
@@ -1167,10 +1146,9 @@ def _init_grid(grid_obj: Grid):
     grid_obj : Grid
         A new Grid instance with an empty `grid` attribute.
     """
-    # do not assign node type, otherwise dynamic attrs cause ambiguous types
-    grid = typed.List()
+
+    grid_obj.grid = typed.List.empty_list(_NODE_TYPE)
     # Fill the list with node instances containing user defined data
     for idxNode in range(grid_obj.number_nodes):
         fill_node = _create_node_at_idx(grid_obj, idxNode)
-        grid.append(fill_node)
-    grid_obj.grid = grid
+        grid_obj.grid.append(fill_node)
