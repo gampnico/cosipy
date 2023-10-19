@@ -170,6 +170,35 @@ class Grid:
         # timestamp)
         self.set_fresh_snow_props(height)
 
+    def add_fresh_debris(
+        self, height, density, temperature, liquid_water_content
+    ):
+        """Add a debris layer (DebrisNode).
+
+        Adds a debris layer to the beginning of the node list (upper
+        layer). This buries any snow.
+
+        Parameters
+        ----------
+        height : float
+            Layer height [:math:`m`].
+        density : float
+            Layer density [:math:`kg~m^{-3}`].
+        temperature : float
+            Layer temperature [:math:`K`].
+        liquid_water_content : float
+            Liquid water content of the layer [:math:`m~w.e.`].
+        """
+
+        self.grid.insert(
+            0,
+            DebrisNode(height, density, temperature, 0.0, 0.0),
+        )
+        self.number_nodes += 1
+
+        # snow is buried
+        self.set_fresh_snow_props(0.0)
+
     def remove_node(self, idx: list = None):
         """Remove a layer (node) from the grid (node list).
 
