@@ -1,7 +1,8 @@
 import numpy as np
-from constants import densification_method, snow_ice_threshold, minimum_snow_layer_height, \
-                      zero_temperature, ice_density
 from numba import njit
+
+import constants
+
 
 def densification(GRID,SLOPE,dt):
     """ Densification of the snowpack
@@ -11,16 +12,31 @@ def densification(GRID,SLOPE,dt):
     """
 
     densification_allowed = ['Boone', 'Vionnet', 'empirical', 'constant']
-    if densification_method == 'Boone':
+    if constants.densification_method == 'Boone':
         method_Boone(GRID,SLOPE,dt)
-    elif densification_method == 'Vionnet':
+    elif constants.densification_method == 'Vionnet':
         method_Vionnet(GRID,SLOPE,dt)
-    elif densification_method == 'empirical':
+    elif constants.densification_method == 'empirical':
         method_empirical(GRID,SLOPE,dt)
-    elif densification_method == 'constant':
+    elif constants.densification_method == 'constant':
         pass
     else:
-        raise ValueError("Densification method = \"{:s}\" is not allowed, must be one of {:s}".format(densification_method, ", ".join(densification_allowed)))
+        raise ValueError("Densification method = \"{:s}\" is not allowed, must be one of {:s}".format(constants.densification_method, ", ".join(densification_allowed)))
+
+def get_array_copy(GRID):
+    """Get copy of layer heights and layer densities
+    
+    np.array returns a copy by default and is 2x faster than np.copy
+    (not supported by numba).
+    """
+
+    rho = np.array(GRID.get_density())
+    height = np.array(GRID.get_height())
+    lwc = np.array(GRID.get_liquid_water_content())
+    t = np.array(GRID.get_temperature())
+    icf = np.array(GRID.get_ice_fraction())
+
+    return rho, height, lwc, t, icf
 
 # @njit(cache=True)
 def method_Boone(GRID,SLOPE,dt):
@@ -28,7 +44,14 @@ def method_Boone(GRID,SLOPE,dt):
         after Essery et al. 2013
     """
 
-    # Constants
+
+    rho, height, lwc, t, icf = get_array_copy(GRID)
+    
+    method_Boone_backend(GRID, dt, rho, height, lwc, t, icf)
+
+@njit
+def method_Boone_backend(GRID,dt, rho, height, lwc, t, icf):
+        # Constants
     c1 = 2.8e-6
     c2 = 0.042
     c3 = 0.046
@@ -40,18 +63,10 @@ def method_Boone(GRID,SLOPE,dt):
     # Overburden snow mass
     M_s = 0.0
 
-    # Get copy of layer heights and layer densities
-    #np.array returns a copy by default and is 2x faster than np.copy (not supported by numba)
-    rho = np.array(GRID.get_density())
-    height = np.array(GRID.get_height())
-    lwc = np.array(GRID.get_liquid_water_content())
-    t = np.array(GRID.get_temperature())
-    icf = np.array(GRID.get_ice_fraction())
-
     # Loop over all internal snow nodes
-    for idxNode in range(0,GRID.get_number_snow_layers() , 1):
+    for idxNode in range(GRID.get_number_snow_layers()):
 
-        if ((rho[idxNode]<snow_ice_threshold) & (height[idxNode]>minimum_snow_layer_height)):
+        if ((rho[idxNode]<constants.snow_ice_threshold) & (height[idxNode]>constants.minimum_snow_layer_height)):
 
             # Get overburden snow mass
             if (idxNode>0):
@@ -60,10 +75,10 @@ def method_Boone(GRID,SLOPE,dt):
                 M_s = M_s + rho[0]*(height[0]/2.0)
 
             # Viscosity
-            eta = eta0 * np.exp(c4*(zero_temperature-t[idxNode])+c5*rho[idxNode])
+            eta = eta0 * np.exp(c4*(constants.zero_temperature-t[idxNode])+c5*rho[idxNode])
 
             # Rate of change in the density
-            dRho = (((M_s*9.81)/eta) + c1*np.exp(-c2*(zero_temperature-t[idxNode]) - c3*np.maximum(0.0,rho[idxNode]-rho0)))*dt
+            dRho = (((M_s*9.81)/eta) + c1*np.exp(-c2*(constants.zero_temperature-t[idxNode]) - c3*np.maximum(0.0,rho[idxNode]-rho0)))*dt
            
             # Calc changes in volumetric fractions of ice and water
             # No water in layer
@@ -108,16 +123,12 @@ def method_Vionnet(GRID,SLOPE,dt):
     sigma = 0.0
 
     # Get copy of layer heights and layer densities
-    rho = np.array(GRID.get_density())
-    height = np.array(GRID.get_height())
-    lwc = np.array(GRID.get_liquid_water_content())
-    t = np.array(GRID.get_temperature())
-    icf = np.array(GRID.get_ice_fraction())
+    rho, height, lwc, t, icf= get_array_copy(GRID)
 
     # Loop over all internal snow nodes
     for idxNode in range(0,GRID.get_number_snow_layers() , 1):
 
-        if ((rho[idxNode]<snow_ice_threshold) & (height[idxNode]>minimum_snow_layer_height)):
+        if ((rho[idxNode]<constants.snow_ice_threshold) & (height[idxNode]>constants.minimum_snow_layer_height)):
 
             # Parameter f1
             f1 = 1 / (1+60.0*(lwc[idxNode]/height[idxNode]))
@@ -182,7 +193,7 @@ def method_empirical(GRID,SLOPE,dt):
 
         if ((1-(dRho/GRID.get_node_density(idxNode)))<1):
             # Set the new ice fraction
-            GRID.set_node_ice_fraction(idxNode, (rho_max + (rho[idxNode]-rho_max) * np.exp(-dt/tau))/ice_density )
+            GRID.set_node_ice_fraction(idxNode, (rho_max + (rho[idxNode]-rho_max) * np.exp(-dt/tau))/constants.ice_density )
 
             # Set height change
             GRID.set_node_height(idxNode, (1-(dRho/GRID.get_node_density(idxNode)))*GRID.get_node_height(idxNode))
