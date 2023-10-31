@@ -24,6 +24,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
+import config
 from cosipy.cpkernel.grid import Grid
 
 
@@ -454,12 +455,11 @@ class TestBoilerplate:
         for key in new_params:
             monkeypatch.setattr(module, key, new_params[key])
 
-    # def patch_debris(self):
-    #     """Patch config to hook debris implementation."""
+    def patch_debris(self, flag: bool = True):
+        """Patch config to hook debris implementation."""
 
-        
-    #     monkeypatch = pytest.MonkeyPatch()
-    #     monkeypatch.setattr(config, "use_debris", True")
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(config, "use_debris", flag)
 
     def test_boilerplate_integration(self):
         """Integration test for boilerplate methods."""

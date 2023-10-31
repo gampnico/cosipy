@@ -5,7 +5,7 @@ import pytest
 from numba import float64, intp, optional, types
 
 import cosipy.cpkernel.grid as cpgrid
-from cosipy.cpkernel.node import NodeType
+from cosipy.cpkernel.node import BaseNodeType, NodeType
 from cosipy.cpkernel.patch._node import Node_init_ice_fraction
 
 
@@ -16,8 +16,13 @@ class TestGridSpecs:
     caching.
     """
 
-    def test_init_node_type(self):
-        class_type = NodeType
+    @pytest.mark.parametrize("arg_debris", [True, False])
+    def test_init_node_type(self, conftest_boilerplate, arg_debris):
+        conftest_boilerplate.patch_debris(arg_debris)
+        if not arg_debris:
+            class_type = NodeType
+        else:
+            class_type = BaseNodeType
         compare_type = cpgrid._init_node_type()
         assert isinstance(compare_type, type(class_type))
 
@@ -28,10 +33,17 @@ class TestGridSpecs:
         assert compare_type == test_type
         assert compare_type is test_type  # cache points to same object
 
-    def test_init_grid_jit_types(self):
-        test_spec = OrderedDict()
+    @pytest.mark.parametrize("arg_debris", [True, False])
+    def test_init_grid_jit_types(
+        self, monkeypatch, conftest_boilerplate, arg_debris
+    ):
+        conftest_boilerplate.patch_debris(arg_debris)
         node_type = cpgrid._init_node_type()
-        grid_type = cpgrid._init_grid_type(node_type)
+        conftest_boilerplate.patch_variable(
+            monkeypatch, cpgrid, {"_NODE_TYPE": node_type}
+        )
+
+        grid_type = types.ListType(node_type)
         fields = [
             ("layer_heights", float64[:]),
             ("layer_densities", float64[:]),
@@ -44,6 +56,7 @@ class TestGridSpecs:
             ("old_snow_timestamp", float64),
             ("grid", grid_type),
         ]
+        test_spec = OrderedDict()
         test_spec.update(fields)
 
         compare_spec = cpgrid._init_grid_jit_types()
@@ -70,13 +83,19 @@ class TestGridSetup:
         ("grid", grid_type),
     ]
 
-    def test_grid_init(self, conftest_boilerplate):
+    @pytest.mark.parametrize("arg_debris", [True, False])
+    def test_grid_init(self, monkeypatch, conftest_boilerplate, arg_debris):
         data = {
             "layer_heights": [0.1, 0.2, 0.3],
             "layer_densities": [200.0, 210.0, 220.0],
             "layer_temperatures": [270.0, 260.0, 250.0],
             "layer_liquid_water_content": [0.0, 0.0, 0.0],
         }
+        conftest_boilerplate.patch_debris(arg_debris)
+        node_type = cpgrid._init_node_type()
+        conftest_boilerplate.patch_variable(
+            monkeypatch, cpgrid, {"_NODE_TYPE": node_type}
+        )
 
         test_grid = cpgrid.Grid(
             layer_heights=float64(data["layer_heights"]),

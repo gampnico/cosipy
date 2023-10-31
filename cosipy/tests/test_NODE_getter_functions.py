@@ -1,7 +1,7 @@
 import pytest
 
 import constants
-from cosipy.cpkernel.node import Node, _init_empty_node, _create_node
+from cosipy.cpkernel.node import Node, _create_node
 
 
 class TestNodeGetter:
@@ -223,22 +223,6 @@ class TestNodeGetter:
             float,
             test_irreducible_water_content,
         )
-
-    def test_init_empty_node(self, conftest_boilerplate):
-        test_node = self.create_node()
-        compare_node = _init_empty_node()
-
-        assert isinstance(compare_node, Node)
-        conftest_boilerplate.check_output(
-            variable=test_node.temperature,
-            x_type=float,
-            x_value=self.temperature,
-        )
-        conftest_boilerplate.check_output(test_node.height, float, self.height)
-        conftest_boilerplate.check_output(
-            test_node.liquid_water_content, float, self.lwc
-        )
-        conftest_boilerplate.check_output(test_node.refreeze, float, 0.0)
 
     def test_node_create_node(self, conftest_boilerplate):
         test_node = self.create_node()

@@ -48,7 +48,7 @@ import cosipy.cpkernel.patch._debris as cpk_debris
 import cosipy.cpkernel.patch._node as cpk_node
 
 # register new subclasses here
-__all__ = [  
+__all__ = [
     "BaseNodeTypeRef",
     "BaseNodeType",
     "BaseNode",
@@ -137,7 +137,7 @@ class BaseNode(structref.StructRefProxy):
         ice_fraction: optional(float64) = None,
     ):
         # Initialises state variables.
-        self.set_layer_ntype(-1)
+        self.set_layer_ntype(int64(-1))
 
     @property
     def height(self) -> float64:
@@ -235,6 +235,33 @@ class BaseNode(structref.StructRefProxy):
     def get_layer_density(self) -> float64:
         return self.get_layer_density()
 
+    @njit(cache=False)
+    def get_layer_specific_heat(self) -> float64:
+        return self.get_layer_specific_heat()
+
+    @njit(cache=False)
+    def get_layer_irreducible_water_content(self) -> float64:
+        return self.get_layer_irreducible_water_content()
+
+    @njit(cache=False)
+    def get_layer_cold_content(self) -> float64:
+        return self.get_layer_cold_content()
+
+    @njit(cache=False)
+    def get_layer_thermal_conductivity(self) -> float64:
+        return self.get_layer_thermal_conductivity()
+
+    @njit(cache=False)
+    def get_layer_thermal_diffusivity(self) -> float64:
+        return self.get_layer_thermal_diffusivity()
+
+
+# register types and bind the proxy
+structref.define_proxy(
+    BaseNode, BaseNodeTypeRef, [name[0] for name in ctor_fields]
+)
+BaseNodeType = BaseNodeTypeRef(ctor_fields)
+
 
 @njit(cache=False)
 def BaseNode_ctor(
@@ -251,7 +278,7 @@ def BaseNode_ctor(
     Args:
         height: Layer height [:math:`m`].
         density: Layer snow density [:math:`kg~m^{-3}`].
-        temperature  Layer temperature [:math:`K`].
+        temperature: Layer temperature [:math:`K`].
         liquid_water_content: Liquid water content [:math:`m~w.e.`].
         ice_fraction: Volumetric ice fraction [-].
     """
@@ -262,7 +289,7 @@ def BaseNode_ctor(
     self.temperature = temperature
     self.liquid_water_content = liquid_water_content
     self.ice_fraction = ice_fraction
-    self.ntype = -1
+    self.ntype = int64(-1)
 
     return self
 
@@ -293,13 +320,6 @@ def ol_BaseNode(
         )
 
     return implementation
-
-
-# register types and bind the proxy
-structref.define_proxy(
-    BaseNode, BaseNodeTypeRef, [name[0] for name in ctor_fields]
-)
-BaseNodeType = BaseNodeTypeRef(ctor_fields)
 
 
 @structref.register
@@ -372,8 +392,8 @@ class Node(BaseNode):
         self.set_layer_ice_fraction(
             cpk_node.Node_init_ice_fraction(ice_fraction, density)
         )
-        self.set_layer_refreeze(0.0)
-        self.ntype = 0
+        self.set_layer_refreeze(float64(0.0))
+        self.set_layer_ntype(int64(0))
 
     """GETTER FUNCTIONS"""
 
@@ -581,7 +601,7 @@ def NodeSubClass_ctor(
     Args:
         height: Layer height [:math:`m`].
         density: Layer snow density [:math:`kg~m^{-3}`].
-        temperature  Layer temperature [:math:`K`].
+        temperature: Layer temperature [:math:`K`].
         liquid_water_content: Liquid water content [:math:`m~w.e.`].
         ice_fraction: Volumetric ice fraction [-].
     """
@@ -593,7 +613,7 @@ def NodeSubClass_ctor(
     self.liquid_water_content = liquid_water_content
     # letting __init__() handle this causes a TypeError as floats are expected
     self.ice_fraction = cpk_node.Node_init_ice_fraction(ice_fraction, density)
-    self.ntype = 0
+    self.ntype = int64(0)
 
     return self
 
@@ -682,9 +702,9 @@ class DebrisNode(BaseNode):
         """
 
         if ice_fraction is None:
-            ice_fraction = 0.0
+            ice_fraction = float64(0.0)
         else:
-            ice_fraction = ice_fraction
+            ice_fraction = float64(ice_fraction)
 
         self = DebrisNodeSubClass_ctor(
             height=height,
@@ -705,8 +725,8 @@ class DebrisNode(BaseNode):
         ice_fraction: optional(float64) = None,
     ):
         # Initialize state variables
-        self.set_layer_ntype(1)
-        self.set_layer_ice_fraction(0.0)
+        self.set_layer_ntype(int64(1))
+        self.set_layer_ice_fraction(float64(0.0))
 
     """GETTER FUNCTIONS"""
 
@@ -883,7 +903,7 @@ def DebrisNodeSubClass_ctor(
     Args:
         height: Layer height [:math:`m`].
         density: Layer snow density [:math:`kg~m^{-3}`].
-        temperature  Layer temperature [:math:`K`].
+        temperature: Layer temperature [:math:`K`].
         liquid_water_content: Liquid water content [:math:`m~w.e.`].
         ice_fraction: Volumetric ice fraction [-].
     """
@@ -894,7 +914,7 @@ def DebrisNodeSubClass_ctor(
     self.temperature = temperature
     self.liquid_water_content = liquid_water_content
     self.ice_fraction = ice_fraction
-    self.ntype = 1
+    self.ntype = int64(1)
 
     return self
 

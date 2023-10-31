@@ -19,9 +19,11 @@ If you created a new subclass:
 3. Define a new upcasting template at the bottom of this module.
 """
 
-from numba import float64, njit
+import warnings
+
+from numba import float64
 from numba.core import cgutils, types
-from numba.core.errors import TypingError
+from numba.core.errors import NumbaTypeSafetyWarning, TypingError
 from numba.core.extending import overload_method, register_jitable
 from numba.core.imputils import lower_cast
 
@@ -41,7 +43,7 @@ DebrisNodeTypeRef = cpk_ctors.DebrisNodeTypeRef
 DebrisNodeType = cpk_ctors.DebrisNodeType
 DebrisNode = cpk_ctors.DebrisNode
 
-# @njit(cache=False)
+
 @register_jitable
 def verify_node_type(node, node_type):
     if not isinstance(node, node_type):
@@ -637,6 +639,9 @@ def _cast_object(
 
 
 """DEFINE CASTING"""
+
+# Warnings still appear in tests, but no information is lost.
+warnings.filterwarnings("ignore", category=NumbaTypeSafetyWarning)
 
 
 @lower_cast(NodeType, BaseNodeType)

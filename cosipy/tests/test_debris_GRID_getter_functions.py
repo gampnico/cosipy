@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from numba import float64, intp, optional, types
 
+import constants
 import cosipy.cpkernel.grid as cpgrid
 from cosipy.cpkernel.node import BaseNodeType
 from cosipy.cpkernel.patch._node import Node_init_ice_fraction
@@ -21,11 +22,6 @@ class TestGridSpecs:
     Returned types should point to the same object to avoid duplicate
     caching.
     """
-
-    def test_init_node_type(self):
-        class_type = BaseNodeType
-        compare_type = cpgrid._init_node_type()
-        assert isinstance(compare_type, type(class_type))
 
     def test_init_grid_type(self):
         class_type = BaseNodeType
@@ -207,12 +203,102 @@ class TestGridGetter:
                 grid.get_node_refreeze(i), float, refrozen[i]
             )
 
-    def test_grid_get_snow_ice_heights(
-        self, conftest_mock_grid_values, conftest_mock_grid
+    def test_grid_get_node_ntype(
+        self, conftest_mock_grid, conftest_boilerplate
     ):
-        data = conftest_mock_grid_values.copy()
-        GRID = conftest_mock_grid
+        test_grid = conftest_mock_grid
 
-        assert np.allclose(GRID.get_snow_heights(), data["layer_heights"][0:3])
-        assert np.allclose(GRID.get_ice_heights(), data["layer_heights"][3:5])
-        assert np.allclose(GRID.get_node_height(0), data["layer_heights"][0])
+        for i in range(test_grid.number_nodes):
+            conftest_boilerplate.check_output(
+                test_grid.get_node_ntype(i), int, 0
+            )
+
+    def test_njit_check_node_ntype(self, conftest_mock_grid):
+        test_grid = conftest_mock_grid
+        test_grid.add_fresh_debris(0.2, 2840.0, 273.15, 0.0)
+        assert cpgrid._check_node_ntype(test_grid, 0, 1)
+        for i in range(1, test_grid.number_nodes):
+            assert cpgrid._check_node_ntype(test_grid, i, 0)
+
+    def test_njit_get_number_ntype_layers(
+        self, conftest_mock_grid, conftest_boilerplate
+    ):
+        test_grid = conftest_mock_grid
+        test_grid.add_fresh_debris(0.2, 2840.0, 273.15, 0.0)
+        test_grid.add_fresh_snow(0.1, 250.0, 273.15, 0.0)
+        test_snow_ice = test_grid.get_number_layers() - 1
+
+        compare_snow_ice = cpgrid._get_number_ntype_layers(test_grid, ntype=0)
+        compare_debris = cpgrid._get_number_ntype_layers(test_grid, ntype=1)
+        compare_base = cpgrid._get_number_ntype_layers(test_grid, ntype=-1)
+
+        conftest_boilerplate.check_output(compare_snow_ice, int, test_snow_ice)
+        conftest_boilerplate.check_output(compare_debris, int, 1)
+        assert compare_base == 0
+
+    def test_grid_get_debris_heights(self, conftest_mock_grid):
+        test_grid = conftest_mock_grid
+        for i in range(test_grid.number_nodes - 1):
+            test_grid.grid[i].set_layer_ntype(1)
+            assert test_grid.get_node_ntype(i) == 1
+
+        compare_heights = test_grid.get_debris_heights()
+        assert isinstance(compare_heights, list)
+        assert len(compare_heights) == test_grid.number_nodes - 1
+        assert all(
+            compare_heights[i] == self.data["layer_heights"][i]
+            for i in range(test_grid.number_nodes - 1)
+        )
+
+    def test_get_number_debris_layers(self, conftest_mock_grid):
+        test_grid = conftest_mock_grid
+        for i in range(test_grid.number_nodes - 1):
+            test_grid.grid[i].set_layer_ntype(1)
+            assert test_grid.get_node_ntype(i) == 1
+
+        compare_nlayers = test_grid.get_number_debris_layers()
+        assert isinstance(compare_nlayers, int)
+        assert compare_nlayers == test_grid.number_nodes - 1
+
+    def test_njit_check_node_is_snow(self, conftest_mock_grid):
+        test_grid = conftest_mock_grid
+        test_snow = test_grid.get_number_snow_layers()
+        test_grid.add_fresh_debris(0.2, 2840.0, 273.15, 0.0)
+        test_nodes = test_grid.number_nodes
+        assert not cpgrid._check_node_is_snow(test_grid, 0)
+        for i in range(1, test_snow):
+            assert cpgrid._check_node_is_snow(test_grid, i)
+        for i in range(test_snow + 1, test_nodes):
+            assert not cpgrid._check_node_is_snow(test_grid, i)
+
+    def test_get_number_snow_layers(
+        self, conftest_mock_grid, conftest_boilerplate
+    ):
+        test_grid = conftest_mock_grid
+
+        test_nlayers = [
+            1
+            for idx in range(test_grid.number_nodes)
+            if (test_grid.get_node_density(idx) < constants.snow_ice_threshold)
+            & (test_grid.get_node_ntype(idx) != 1)
+        ]
+
+        compare_nlayers = test_grid.get_number_snow_layers()
+        conftest_boilerplate.check_output(
+            compare_nlayers, int, sum(test_nlayers)
+        )
+
+    def test_get_total_debris_height(
+        self, conftest_boilerplate, conftest_mock_grid
+    ):
+        test_grid = conftest_mock_grid
+        test_nlayers = [
+            test_grid.grid[idx].get_layer_height()
+            for idx in range(test_grid.number_nodes)
+            if test_grid.get_node_ntype(idx) == 1
+        ]
+        compare_nlayers = test_grid.get_total_debris_height()
+
+        conftest_boilerplate.check_output(
+            compare_nlayers, float, sum(test_nlayers)
+        )

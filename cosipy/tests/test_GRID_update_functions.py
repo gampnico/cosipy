@@ -61,7 +61,9 @@ class TestGridUpdate:
             compare_refreeze, float, test_refreeze + 0.5
         )
 
-    def test_grid_update_functions(self, conftest_mock_grid):
+    def test_grid_update_functions(
+        self, conftest_mock_grid, conftest_boilerplate
+    ):
         GRID = conftest_mock_grid
         GRID.set_node_liquid_water_content(0, 0.04)
         GRID.set_node_liquid_water_content(1, 0.03)
@@ -71,12 +73,27 @@ class TestGridUpdate:
 
         SWE_before = np.array(GRID.get_height()) / np.array(GRID.get_density())
         SWE_before_sum = np.nansum(SWE_before)
+        test_density = GRID.get_node_density(0)
+        test_height = GRID.get_node_height(0)
 
         GRID.update_grid()
         SWE_after = np.array(GRID.get_height()) / np.array(GRID.get_density())
         SWE_after_sum = np.nansum(SWE_after)
+        compare_density = GRID.get_node_density(0)
+        compare_height = GRID.get_node_height(0)
+
+        assert compare_height < test_height
+        conftest_boilerplate.check_output(compare_density, float, test_density)
 
         GRID.adaptive_profile()
+        adaptive_density = GRID.get_node_density(0)
+        adaptive_height = GRID.get_node_height(0)
+
+        assert adaptive_height <= compare_height
+        conftest_boilerplate.check_output(
+            adaptive_density, float, compare_density
+        )
+
         SWE_after_adaptive = np.array(GRID.get_height()) / np.array(
             GRID.get_density()
         )
@@ -132,10 +149,6 @@ class TestGridInteractions:
             compare_node.liquid_water_content, float, arg_lwc
         )
 
-
-class TestGridInteractions:
-    """Tests remeshing and interactions between layers."""
-
     @pytest.mark.parametrize("arg_idx", [None, [-1], [0, 1, 2]])
     def test_grid_remove_node(
         self, conftest_mock_grid_values, conftest_mock_grid, arg_idx
@@ -158,4 +171,99 @@ class TestGridInteractions:
         assert np.isclose(  # matches new density
             np.nanmean(GRID.get_density()),
             np.nanmean(np.delete(data["layer_densities"], indices)),
+        )
+
+
+class TestGridRemeshing:
+    """Tests if layers can remesh and merge."""
+
+    def get_overburden_pressure(
+        self, grid_obj, idx: int = 0, single: bool = False
+    ):
+        """Get overburden pressure for two contiguous layers.
+
+        Args:
+            grid_obj (Grid): Grid data instance.
+            idx: Layer index. Default 0.
+            single: Only calculate pressure for a single layer.
+                Default `False`.
+        """
+
+        w0 = grid_obj.get_node_height(idx) * grid_obj.get_node_density(idx)
+        if not single:
+            w0 += grid_obj.get_node_height(
+                idx + 1
+            ) * grid_obj.get_node_density(idx + 1)
+
+        return w0
+
+    @pytest.mark.parametrize("arg_single", [True, False])
+    def test_get_overburden_pressure(
+        self, conftest_mock_grid, conftest_boilerplate, arg_single
+    ):
+        test_grid = conftest_mock_grid
+        test_w0 = test_grid.get_node_height(0) * test_grid.get_node_density(0)
+        if not arg_single:
+            test_w0 += test_grid.get_node_height(
+                1
+            ) * test_grid.get_node_density(1)
+        compare_w0 = self.get_overburden_pressure(
+            grid_obj=test_grid, idx=0, single=arg_single
+        )
+        conftest_boilerplate.check_output(compare_w0, float, test_w0)
+
+    def test_merge_nodes(self, conftest_mock_grid, conftest_boilerplate):
+        test_grid = conftest_mock_grid
+        test_nodes = test_grid.number_nodes
+
+        # snow-snow
+        idx = test_nodes
+        test_w0 = self.get_overburden_pressure(test_grid, idx)
+        test_height = sum(test_grid.get_height()[idx : idx + 2])
+
+        test_grid.merge_nodes(idx)
+
+        compare_w0 = self.get_overburden_pressure(test_grid, idx, single=True)
+        conftest_boilerplate.check_output(compare_w0, float, test_w0)
+        conftest_boilerplate.check_output(
+            test_grid.get_node_height(idx), float, test_height
+        )
+
+        # glacier-glacier
+        idx = test_grid.number_nodes - 2  # last two layers are ice
+        test_w0 = self.get_overburden_pressure(test_grid, idx)
+        test_height = sum(test_grid.get_height()[idx:])
+
+        test_grid.merge_nodes(idx)
+
+        compare_w0 = self.get_overburden_pressure(test_grid, idx, single=True)
+        conftest_boilerplate.check_output(compare_w0, float, test_w0)
+        conftest_boilerplate.check_output(
+            test_grid.get_node_height(idx), float, test_height
+        )
+
+    def test_log_profile(self, conftest_mock_grid, conftest_boilerplate):
+        test_grid = conftest_mock_grid
+        test_nodes = test_grid.number_nodes
+        test_snowheight = test_grid.get_total_snowheight()
+        test_total_height = test_grid.get_total_height()
+        test_ice_height = (
+            test_grid.get_total_height() - test_grid.get_total_snowheight()
+        )
+
+        test_grid.log_profile()
+        assert test_grid.number_nodes > test_nodes
+        assert test_grid.get_number_layers() == test_grid.number_nodes
+        assert test_grid.get_number_snow_layers() == 14
+        conftest_boilerplate.check_output(
+            test_grid.get_total_snowheight(), float, test_snowheight
+        )
+        conftest_boilerplate.check_output(
+            test_grid.get_total_height(), float, test_total_height
+        )
+        compare_ice_height = (
+            test_grid.get_total_height() - test_grid.get_total_snowheight()
+        )
+        conftest_boilerplate.check_output(
+            compare_ice_height, float, test_ice_height
         )

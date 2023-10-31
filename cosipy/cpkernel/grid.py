@@ -2,7 +2,7 @@ import os
 from collections import OrderedDict
 
 import numpy as np
-from numba import float64, intp, njit, optional, typed, types
+from numba import float64, int64, intp, njit, optional, typed, types
 from numba.experimental import jitclass
 from numba.extending import register_jitable
 
@@ -196,8 +196,7 @@ class Grid:
         )
         self.number_nodes += 1
 
-        # snow is buried
-        self.set_fresh_snow_props(0.0)
+        self.set_fresh_snow_props(0.0)  # snow is buried under debris
 
     def remove_node(self, idx: list = None):
         """Remove a layer (node) from the grid (node list).
@@ -234,9 +233,9 @@ class Grid:
             if no index is provided.
         """
         # Get overburden pressure for consistency check
-        w0 = self.get_node_height(idx) * self.get_node_density(
-            idx
-        ) + self.get_node_height(idx + 1) * self.get_node_density(idx + 1)
+        # w0 = self.get_node_height(idx) * self.get_node_density(
+        #     idx
+        # ) + self.get_node_height(idx + 1) * self.get_node_density(idx + 1)
 
         # New layer height by adding up the height of the two layers
         new_height = self.get_node_height(idx) + self.get_node_height(idx + 1)
@@ -297,6 +296,25 @@ class Grid:
 
         # Remove the second layer
         self.remove_node([idx + 1])
+
+    def correct_layer_selector(self, idx, min_height):
+        """Restrict layer correction to matching layer types.
+
+        Used by the debris implementation. Prevents
+
+        Parameters
+        ----------
+        idx : int
+            Index of the node to be removed. The first node is removed
+            if no index is provided.
+        min_height : float
+            New layer height [:math:`m`].
+        """
+
+        if _check_node_ntype(
+            self, idx=idx + 1, ntype=self.get_node_ntype(idx)
+        ):
+            self.correct_layer(idx, min_height)
 
     def correct_layer(self, idx, min_height):
         """Adjust the height of a given layer.
@@ -408,6 +426,25 @@ class Grid:
             # Update node counter
             self.number_nodes += 1
 
+    def set_next_height(
+        self, remesh_depth: float, current_height: float
+    ) -> tuple:
+        """Set next layer's height and the amount of snow/ice to remesh.
+
+        Args:
+            remesh_depth: The amount of snow or ice left to remesh [m].
+            current_height: The current layer's height [m].
+
+        Returns:
+            tuple[float, float]: Updated remesh depth and the next
+            layer's height.
+        """
+        remesh_depth = remesh_depth - current_height
+        # Height for the next layer
+        next_height = constants.layer_stretching * current_height
+
+        return remesh_depth, next_height
+
     def log_profile(self):
         """Remesh the layer heights logarithmically.
 
@@ -436,11 +473,9 @@ class Grid:
             if hrest >= last_layer_height:
                 # Correct first layer
                 self.correct_layer(idx, last_layer_height)
-
-                hrest = hrest - last_layer_height
-
-                # Height for the next layer
-                last_layer_height = constants.layer_stretching * last_layer_height
+                hrest, last_layer_height = self.set_next_height(
+                    hrest, last_layer_height
+                )
 
             # if the last layer is smaller than the required height,
             # then merge with the previous layer
@@ -460,17 +495,84 @@ class Grid:
             if hrest >= last_layer_height:
                 # Correct first layer
                 self.correct_layer(idx, last_layer_height)
+                hrest, last_layer_height = self.set_next_height(
+                    hrest, last_layer_height
+                )
 
-                hrest = hrest - last_layer_height
-
-                # Height for the next layer
-                last_layer_height = constants.layer_stretching * last_layer_height
-
-            # if the last layer is smaller than the required height,
-            # then merge with the previous layer
             elif hrest < last_layer_height:
                 self.merge_nodes(idx - 1)
 
+            idx = idx + 1
+
+    def log_profile_debris(self):
+        """Remesh the layer heights logarithmically (debris-compatible).
+
+        Used by the debris implementation of COSIPY. It remeshes the
+        snow layer heights (numerical grid) logarithmically using a
+        given stretching factor and first layer height. Both are defined
+        in `constants.py`:
+
+        * The stretching factor is defined by `layer_stretching`.
+        * The first layer height is defined by `first_layer_height`.
+
+        E.g. for the stretching factor, a value of 1.1 corresponds to a
+        10% stretching from one layer to the next.
+
+        This algorithm does not remesh debris layer heights.
+
+        .. note:: A snow/ice layer directly below a debris layer cannot
+            be merged even if it is smaller than `last_layer_height`.
+        """
+
+        last_layer_height = constants.first_layer_height
+        hsnow = self.get_total_snowheight()
+        # How much snow is not yet remeshed
+        hrest = hsnow
+
+        # First remesh the snowpack
+        idx = 0
+        n_debris = 0
+        while idx < self.get_number_snow_layers() + n_debris:
+            if _check_node_is_snow(self, idx):
+                if hrest >= last_layer_height:
+                    # Correct first layer
+                    self.correct_layer_selector(idx, last_layer_height)
+                    hrest, last_layer_height = self.set_next_height(
+                        hrest, last_layer_height
+                    )
+                # if the last layer is smaller than the required height,
+                # then merge with the previous layer
+                elif (
+                    (hrest < last_layer_height)
+                    & (idx > 0)
+                    & (_check_node_is_snow(self, idx - 1))
+                ):
+                    self.merge_nodes(idx - 1)
+            else:
+                n_debris = n_debris + 1
+            idx = idx + 1
+
+        # get the glacier depth
+        # TODO: only subtract heights of skipped debris layers
+        hrest = self.get_total_height() - self.get_total_snowheight() - self.get_total_debris_height()
+
+        idx = self.get_number_snow_layers() + n_debris
+        n_debris = 0  # already processed debris layers in snowpack
+        while idx < self.get_number_layers():
+            if not _check_node_ntype(self, idx, 1):
+                if (hrest >= last_layer_height) & (
+                    idx + 1 < self.get_number_layers()
+                ):
+                    self.correct_layer_selector(idx, last_layer_height)
+                    hrest, last_layer_height = self.set_next_height(
+                        hrest, last_layer_height
+                    )
+                elif (hrest < last_layer_height) & (
+                    not _check_node_ntype(self, idx - 1, 1)
+                ):
+                    self.merge_nodes(idx - 1)
+            else:
+                n_debris = n_debris + 1
             idx = idx + 1
 
     def adaptive_profile(self):
@@ -598,6 +700,32 @@ class Grid:
             print(self.get_height())
             print(self.get_density())
 
+    def update_grid_debris(self):
+        """Remesh layers (numerical grid) for debris-covered glaciers.
+
+        One algorithm is currently implemented to remesh layers:
+
+            (i)  log_profile_debris
+
+        (i)  The log-profile algorithm arranges the mesh
+             logarithmically. The user specifies the stretching factor
+             `layer_stretching` in `constants.py` to determine the
+             increase in layer heights. Debris layers are skipped and
+             englacial debris will prevent adjacent snow/ice nodes from
+             merging.
+        """
+        if constants.remesh_method == "log_profile":
+            self.log_profile_debris()
+        else:
+            error_msg = f"{constants.remesh_method} is not implemented."
+            raise NotImplementedError(error_msg)
+
+        # first layer is too small and not debris
+        if (not _check_node_ntype(self, 0, 1)) & (
+            self.get_node_height(0) < constants.minimum_snow_layer_height
+        ):
+            self.remove_node([0])
+
     def update_grid(self):
         """Remesh the layers (numerical grid).
 
@@ -622,14 +750,20 @@ class Grid:
         # -------------------------------------------------------------------------
         # Remeshing options
         # -------------------------------------------------------------------------
-        if constants.remesh_method == "log_profile":
-            self.log_profile()
-        elif constants.remesh_method == "adaptive_profile":
-            self.adaptive_profile()
+        if not config.use_debris:
+            if constants.remesh_method == "log_profile":
+                self.log_profile()
+            elif constants.remesh_method == "adaptive_profile":
+                self.adaptive_profile()
+            else:
+                error_msg = f"{constants.remesh_method} is not implemented."
+                raise NotImplementedError(error_msg)
 
-        # if first layer becomes very small, remove it
-        if self.get_node_height(0) < constants.minimum_snow_layer_height:
-            self.remove_node([0])
+            # if first layer becomes very small, remove it
+            if self.get_node_height(0) < constants.minimum_snow_layer_height:
+                self.remove_node([0])
+        else:
+            self.update_grid_debris()
 
     def merge_snow_with_glacier(self, idx):
         """Merge a snow layer with a ice layer.
@@ -863,10 +997,19 @@ class Grid:
 
     def get_snow_heights(self):
         """Get the heights of the snow layers."""
-        return [
-            self.grid[idx].get_layer_height()
-            for idx in range(self.get_number_snow_layers())
-        ]
+        if not config.use_debris:
+            snow_heights = [
+                self.grid[idx].get_layer_height()
+                for idx in range(self.number_nodes)
+                if (self.get_node_density(idx) < constants.snow_ice_threshold)
+            ]
+        else:
+            snow_heights = [
+                self.grid[idx].get_layer_height()
+                for idx in range(self.number_nodes)
+                if (_check_node_is_snow(self, idx))
+            ]
+        return snow_heights
 
     def get_ice_heights(self):
         """Get the heights of the ice layers."""
@@ -874,6 +1017,28 @@ class Grid:
             self.grid[idx].get_layer_height()
             for idx in range(self.number_nodes)
             if (self.get_node_density(idx) >= constants.snow_ice_threshold)
+        ]
+
+    def get_node_ntype(self, idx: int) -> int:
+        """Get a node's subclass type if available."""
+        if not config.use_debris:
+            return 0
+        else:
+            return self.grid[idx].get_layer_ntype()
+
+    def get_ntype(self) -> list:
+        """Get the layer node types."""
+        return [
+            self.grid[idx].get_layer_ntype()
+            for idx in range(self.number_nodes)
+        ]
+
+    def get_debris_heights(self) -> list:
+        """Get the heights of the debris layers."""
+        return [
+            self.grid[idx].get_layer_height()
+            for idx in range(self.number_nodes)
+            if (_check_node_ntype(self, idx, 1))
         ]
 
     def get_node_height(self, idx: int):
@@ -998,28 +1163,37 @@ class Grid:
 
     def get_total_snowheight(self, verbose=False):
         """Get the total snowheight (density<snow_ice_threshold)."""
-        snowheights = [
-            self.grid[idx].get_layer_height()
-            for idx in range(self.number_nodes)
-            if self.get_node_density(idx) < constants.snow_ice_threshold
-        ]
-        return np.sum(
-            np.array(snowheights)
-        )  # numba needs to be able to determine type of list contents
+        return sum(self.get_snow_heights())
+
+    def get_total_debris_height(self):
+        """Get the sum of all debris layer heights."""
+        return sum(self.get_debris_heights())
 
     def get_total_height(self, verbose=False):
         """Get the total domain height."""
-        total = [self.get_node_height(idx) for idx in range(self.number_nodes)]
-        return np.sum(np.array(total))
+        return sum(self.get_height())
 
     def get_number_snow_layers(self):
         """Get the number of snow layers (density<snow_ice_threshold)."""
-        nlayers = [
-            1
-            for idx in range(self.number_nodes)
-            if self.get_node_density(idx) < constants.snow_ice_threshold
-        ]
-        return int(np.sum(np.array(nlayers)))
+        if not config.use_debris:
+            nlayers = [
+                1
+                for idx in range(self.number_nodes)
+                if self.get_node_density(idx) < constants.snow_ice_threshold
+            ]
+
+        else:
+            nlayers = [
+                1
+                for idx in range(self.number_nodes)
+                if (_check_node_is_snow(self, idx))
+            ]
+
+        return sum(nlayers)
+
+    def get_number_debris_layers(self) -> int64:
+        """Get the number of debris layers (ntype == 1)."""
+        return _get_number_ntype_layers(self, 1)
 
     def get_number_layers(self):
         """Get the number of layers."""
@@ -1051,22 +1225,24 @@ class Grid:
             n = self.number_nodes
 
         print(
-            "Node no., Layer height [m], Temperature [K], Density [kg m^-3], \
-               LWC [-], LW [m], CC [J m^-2], Porosity [-], Refreezing [m w.e.], \
-	       Irreducible water content [-]"
+            "Node no., Layer height [m], Temperature [K], Density [kg m^-3]",
+            "LWC [-], LW [m], CC [J m^-2], Porosity [-], Refreezing [m w.e.]",
+            "Irreducible water content [-]",
         )
 
         for i in range(n):
             print(
                 i,
-                self.get_node_height(i),
-                self.get_node_temperature(i),
-                self.get_node_density(i),
-                self.get_node_liquid_water_content(i),
-                self.get_node_cold_content(i),
-                self.get_node_porosity(i),
-                self.get_node_refreeze(i),
-                self.get_node_irreducible_water_content(i),
+                np.round(self.get_node_height(i), decimals=3),
+                np.round(self.get_node_temperature(i), decimals=3),
+                np.round(self.get_node_density(i), decimals=3),
+                np.round(self.get_node_liquid_water_content(i), decimals=3),
+                np.round(self.get_node_cold_content(i), decimals=3),
+                np.round(self.get_node_porosity(i), decimals=3),
+                np.round(self.get_node_refreeze(i), decimals=3),
+                np.round(
+                    self.get_node_irreducible_water_content(i), decimals=3
+                ),
             )
 
     def grid_info_screen(self, n=-999):
@@ -1128,6 +1304,58 @@ class Grid:
                 np.nanmin(property),
             )
             os._exit()
+
+
+@njit(cache=False)
+def _get_number_ntype_layers(self, ntype: int64 = 0) -> int:
+    """Get the number of layers matching a specific subtype.
+
+    Used by the debris implementation.
+
+    Args:
+        ntype: Subtype number. Default 0.
+
+    Returns:
+        nlayers: Number of layers with the specified subtype number.
+    """
+    nlayers = 0
+    for idx in range(self.number_nodes):
+        if _check_node_ntype(self, idx, ntype):
+            nlayers += 1
+    return nlayers
+
+
+@njit(cache=False)
+def _check_node_ntype(self, idx: int, ntype: int64 = 0) -> bool:
+    """Check a layer has a specific subtype number.
+
+    Used by the debris implementation.
+
+    Args:
+        idx: Node index in `grid`.
+        ntype: Subtype number. Default 0.
+
+    Returns:
+        True if layer subtype matches, otherwise returns False.
+    """
+    return self.get_node_ntype(idx) == ntype
+
+
+@njit(cache=False)
+def _check_node_is_snow(self, idx: int) -> bool:
+    """Check if a layer is a snow layer.
+
+    Used by the debris implementation.
+
+    Args:
+        idx: Node index in `grid`.
+
+    Returns:
+        True if layer is snow, otherwise returns False.
+    """
+    return (self.get_node_ntype(idx) == 0) & (
+        self.get_node_density(idx) < constants.snow_ice_threshold
+    )
 
 
 @njit(cache=False)
