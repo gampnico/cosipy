@@ -443,9 +443,19 @@ class TestGridRemeshing:
 class TestGridUpdate:
     """Tests update methods for Grid objects."""
 
+    @pytest.mark.parametrize(
+        "arg_profile", ["log_profile", "adaptive_profile"]
+    )
     def test_grid_update_functions(
-        self, conftest_mock_grid, conftest_boilerplate
+        self,
+        monkeypatch,
+        conftest_mock_grid,
+        conftest_boilerplate,
+        arg_profile,
     ):
+        conftest_boilerplate.patch_variable(
+            monkeypatch, cpgrid.constants, {"remesh_method": arg_profile}
+        )
         GRID = conftest_mock_grid
         GRID.set_node_liquid_water_content(0, 0.04)
         GRID.set_node_liquid_water_content(1, 0.03)
@@ -455,31 +465,19 @@ class TestGridUpdate:
 
         SWE_before = np.array(GRID.get_height()) / np.array(GRID.get_density())
         SWE_before_sum = np.nansum(SWE_before)
-        test_density = GRID.get_node_density(0)
-        test_height = GRID.get_node_height(0)
+        test_surface_height = GRID.get_node_height(0)
+        test_snowheight = GRID.get_total_snowheight(0)
+        test_height = GRID.get_total_height()
 
-        GRID.update_grid()
+        GRID.update_grid_debris()
         SWE_after = np.array(GRID.get_height()) / np.array(GRID.get_density())
         SWE_after_sum = np.nansum(SWE_after)
-        compare_density = GRID.get_node_density(0)
-        compare_height = GRID.get_node_height(0)
-
-        assert compare_height < test_height
-        conftest_boilerplate.check_output(compare_density, float, test_density)
-
-        GRID.adaptive_profile()
-        adaptive_density = GRID.get_node_density(0)
-        adaptive_height = GRID.get_node_height(0)
-
-        assert adaptive_height <= compare_height
+        compare_surface_height = GRID.get_node_height(0)
+        assert compare_surface_height <= test_surface_height
         conftest_boilerplate.check_output(
-            adaptive_density, float, compare_density
+            GRID.get_total_snowheight(), float, test_snowheight
         )
-
-        SWE_after_adaptive = np.array(GRID.get_height()) / np.array(
-            GRID.get_density()
+        conftest_boilerplate.check_output(
+            GRID.get_total_height(), float, test_height
         )
-        SWE_after_adaptive_sum = np.nansum(SWE_after_adaptive)
-
-        assert np.allclose(SWE_before_sum, SWE_after_sum, atol=1e-3)
-        assert np.allclose(SWE_after_sum, SWE_after_adaptive_sum, atol=1e-3)
+        assert np.allclose(SWE_before_sum, SWE_after_sum, atol=1e-4)
