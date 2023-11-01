@@ -767,9 +767,10 @@ class Grid:
     def update_grid_debris(self):
         """Remesh layers (numerical grid) for debris-covered glaciers.
 
-        One algorithm is currently implemented to remesh layers:
+        Two algorithms are currently implemented to remesh layers:
 
             (i)  log_profile_debris
+            (ii) adaptive_profile_debris
 
         (i)  The log-profile algorithm arranges the mesh
              logarithmically. The user specifies the stretching factor
@@ -777,6 +778,14 @@ class Grid:
              increase in layer heights. Debris layers are skipped and
              englacial debris will prevent adjacent snow/ice nodes from
              merging.
+
+        (ii) Profile adjustment is done using layer similarity. Layers
+             with very similar temperature and density states are
+             joined. Similarity is determined from the user-specified
+             threshold values `temperature_threshold_merging` and
+             `density_threshold_merging` in `constants.py`. The maximum
+             number of merging steps per time step is specified by
+             `merge_max`.
         """
         if constants.remesh_method == "log_profile":
             self.log_profile_debris()
