@@ -300,7 +300,8 @@ class Grid:
     def correct_layer_selector(self, idx, min_height):
         """Restrict layer correction to matching layer types.
 
-        Used by the debris implementation. Prevents
+        Used by the debris implementation. Prevents debris merging with
+        snow/ice.
 
         Parameters
         ----------
@@ -554,7 +555,11 @@ class Grid:
 
         # get the glacier depth
         # TODO: only subtract heights of skipped debris layers
-        hrest = self.get_total_height() - self.get_total_snowheight() - self.get_total_debris_height()
+        hrest = (
+            self.get_total_height()
+            - self.get_total_snowheight()
+            - self.get_total_debris_height()
+        )
 
         idx = self.get_number_snow_layers() + n_debris
         n_debris = 0  # already processed debris layers in snowpack
@@ -586,9 +591,11 @@ class Grid:
         layer is smaller than the user defined threshold.
         (2) the temperature difference is smaller than the user defined
         threshold.
+        (3) the number of merges per time step does not exceed the user
+        defined threshold.
 
-        The thresholds are defined by `temperature_threshold_merging`
-        and `density_threshold_merging` in `constants.py`.
+        The thresholds are defined by `temperature_threshold_merging`,
+        `density_threshold_merging`, and `merge_max` in `constants.py`.
         """
         # First remesh the snowpack
         idx = 0
@@ -618,6 +625,63 @@ class Grid:
 
         # Correct first layer
         self.correct_layer(0, constants.first_layer_height)
+
+    def adaptive_profile_debris(self):
+        """Remesh according to certain layer state criteria.
+
+        This algorithm is an alternative to logarithmic remeshing.
+        It checks the similarity of two subsequent layers. Layers are
+        merged if:
+
+        (1) the density difference between the layer and the subsequent
+        layer is smaller than the user defined threshold.
+        (2) the temperature difference is smaller than the user defined
+        threshold.
+        (3) the number of merges per time step does not exceed the user
+        defined threshold.
+
+        The thresholds are defined by `temperature_threshold_merging`,
+        `density_threshold_merging`, and `merge_max` in `constants.py`.
+        """
+
+        idx = 0
+        merge_counter = 0
+        n_debris = 0
+
+        # First remesh the snowpack
+        while idx < self.get_number_snow_layers() + n_debris - 1:
+            if _check_node_is_snow(self, idx):
+                dT = np.abs(
+                    self.get_node_temperature(idx)
+                    - self.get_node_temperature(idx + 1)
+                )
+                dRho = np.abs(
+                    self.get_node_density(idx) - self.get_node_density(idx + 1)
+                )
+                if (
+                    _check_node_is_snow(self, idx + 1)
+                    & (dT <= constants.temperature_threshold_merging)
+                    & (dRho <= constants.density_threshold_merging)
+                    & (self.get_node_height(idx) <= 0.1)
+                    & (merge_counter <= constants.merge_max)
+                ):
+                    self.merge_nodes(idx)
+                    merge_counter += 1
+                # elif ((self.get_node_height(idx)<=minimum_snow_layer_height) & (dRho<=density_threshold_merging)):
+                elif (
+                    self.get_node_height(idx)
+                    <= constants.minimum_snow_layer_height
+                ):
+                    self.remove_node([idx])
+                else:
+                    idx += 1  # only step when all other conditions exhausted
+            else:
+                n_debris += 1
+                idx += 1  # skip current debris layer
+
+        # Correct first layer
+        if not _check_node_ntype(self, 0, 1):
+            self.correct_layer(0, constants.first_layer_height)
 
     def split_node(self, pos):
         """Split node at position.
@@ -716,6 +780,8 @@ class Grid:
         """
         if constants.remesh_method == "log_profile":
             self.log_profile_debris()
+        elif constants.remesh_method == "adaptive_profile":
+            self.adaptive_profile_debris()
         else:
             error_msg = f"{constants.remesh_method} is not implemented."
             raise NotImplementedError(error_msg)

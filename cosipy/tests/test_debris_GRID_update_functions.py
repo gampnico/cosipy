@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from cosipy.cpkernel.grid import Grid
+import cosipy.cpkernel.grid as cpgrid
 from cosipy.cpkernel.node import BaseNode
 
 
@@ -179,22 +179,22 @@ class TestGridInteractions:
 class TestGridRemeshing:
     """Tests if layers can remesh and merge."""
 
-    def add_debris_to_grid(self, grid_obj: Grid):
-        """Fixture for adding a debris layer."""
+    def fixt_add_debris_to_grid(self, grid_obj: cpgrid.Grid):
+        """Add a debris layer."""
         grid_obj.add_fresh_debris(0.2, 2840.0, 273.15, 0.0)
 
-    def test_add_debris_to_grid(self, conftest_mock_grid):
+    def test_fixt_add_debris_to_grid(self, conftest_mock_grid):
         """Add debris layer using fixture."""
         test_grid = conftest_mock_grid
         test_nodes = test_grid.number_nodes
-        self.add_debris_to_grid(grid_obj=test_grid)
+        self.fixt_add_debris_to_grid(grid_obj=test_grid)
         assert test_grid.get_node_ntype(0) == 1
         for i in range(1, test_grid.number_nodes):
             assert test_grid.get_node_ntype(i) == 0
         assert test_grid.number_nodes == test_nodes + 1
         assert test_grid.get_number_debris_layers() == 1
 
-    def get_hydrostatic_pressure(
+    def fixt_get_hydrostatic_pressure(
         self, grid_obj, idx: int = 0, single: bool = False
     ) -> float:
         """Get hydrostatic pressure for two contiguous layers.
@@ -218,7 +218,7 @@ class TestGridRemeshing:
         return 9.81 * w0
 
     @pytest.mark.parametrize("arg_single", [True, False])
-    def test_get_hydrostatic_pressure(
+    def test_fixt_get_hydrostatic_pressure(
         self, conftest_mock_grid, conftest_boilerplate, arg_single
     ):
         test_grid = conftest_mock_grid
@@ -227,7 +227,7 @@ class TestGridRemeshing:
             test_w0 += test_grid.get_node_height(
                 1
             ) * test_grid.get_node_density(1)
-        compare_w0 = self.get_hydrostatic_pressure(
+        compare_w0 = self.fixt_get_hydrostatic_pressure(
             grid_obj=test_grid, idx=0, single=arg_single
         )
         conftest_boilerplate.check_output(compare_w0, float, 9.81 * test_w0)
@@ -236,19 +236,21 @@ class TestGridRemeshing:
         """TODO: remove as it's tested in test_GRID_update_functions"""
         test_grid = conftest_mock_grid
         ref_nodes = test_grid.number_nodes
-        self.add_debris_to_grid(test_grid)
+        self.fixt_add_debris_to_grid(test_grid)
         test_grid.add_fresh_snow(0.1, 250.0, 273.15, 0.0)
         test_nodes = test_grid.number_nodes
         assert test_nodes == ref_nodes + 2
 
         # snow-snow
         idx = test_nodes - ref_nodes
-        test_w0 = self.get_hydrostatic_pressure(test_grid, idx)
+        test_w0 = self.fixt_get_hydrostatic_pressure(test_grid, idx)
         test_height = sum(test_grid.get_height()[idx : idx + 2])
 
         test_grid.merge_nodes(idx)
 
-        compare_w0 = self.get_hydrostatic_pressure(test_grid, idx, single=True)
+        compare_w0 = self.fixt_get_hydrostatic_pressure(
+            test_grid, idx, single=True
+        )
         conftest_boilerplate.check_output(compare_w0, float, test_w0)
         conftest_boilerplate.check_output(
             test_grid.get_node_height(idx), float, test_height
@@ -256,64 +258,17 @@ class TestGridRemeshing:
 
         # glacier-glacier
         idx = test_grid.number_nodes - 2  # last two layers are ice
-        test_w0 = self.get_hydrostatic_pressure(test_grid, idx)
+        test_w0 = self.fixt_get_hydrostatic_pressure(test_grid, idx)
         test_height = sum(test_grid.get_height()[idx:])
 
         test_grid.merge_nodes(idx)
 
-        compare_w0 = self.get_hydrostatic_pressure(test_grid, idx, single=True)
+        compare_w0 = self.fixt_get_hydrostatic_pressure(
+            test_grid, idx, single=True
+        )
         conftest_boilerplate.check_output(compare_w0, float, test_w0)
         conftest_boilerplate.check_output(
             test_grid.get_node_height(idx), float, test_height
-        )
-
-    def test_log_profile_debris_clean_ice(
-        self, conftest_mock_grid_values, conftest_boilerplate
-    ):
-        """Log profile on clean-ice glacier is identical."""
-
-        data = conftest_mock_grid_values.copy()
-        grid_sno = Grid(
-            layer_heights=data["layer_heights"],
-            layer_densities=data["layer_densities"],
-            layer_temperatures=data["layer_temperatures"],
-            layer_liquid_water_content=data["layer_liquid_water_content"],
-        )
-        grid_deb = Grid(
-            layer_heights=data["layer_heights"],
-            layer_densities=data["layer_densities"],
-            layer_temperatures=data["layer_temperatures"],
-            layer_liquid_water_content=data["layer_liquid_water_content"],
-        )
-
-        assert grid_sno is not grid_deb  # don't point to same object
-
-        sno_ice_height = (
-            grid_sno.get_total_height() - grid_sno.get_total_snowheight()
-        )
-        grid_sno.log_profile()
-        grid_deb.log_profile_debris()
-
-        assert grid_sno.number_nodes == grid_deb.number_nodes
-        assert grid_sno.get_number_layers() == grid_deb.get_number_layers()
-        assert (
-            grid_sno.get_number_snow_layers()
-            == grid_deb.get_number_snow_layers()
-        )
-
-        conftest_boilerplate.check_output(
-            grid_sno.get_total_snowheight(),
-            float,
-            grid_deb.get_total_snowheight(),
-        )
-        conftest_boilerplate.check_output(
-            grid_sno.get_total_height(), float, grid_deb.get_total_height()
-        )
-        compare_ice_height = (
-            grid_deb.get_total_height() - grid_sno.get_total_snowheight()
-        )
-        conftest_boilerplate.check_output(
-            compare_ice_height, float, sno_ice_height
         )
 
     @pytest.mark.parametrize("arg_bury", [True, False])
@@ -360,6 +315,129 @@ class TestGridRemeshing:
 
         for density in test_grid.get_density():
             assert density < 1000
+
+    def test_log_profile_debris_clean_ice(
+        self, conftest_mock_grid_values, conftest_boilerplate
+    ):
+        """Output of `log_profile_debris` on a grid with no debris is
+        identical to `log_profile`.
+        """
+
+        data = conftest_mock_grid_values.copy()
+        grid_sno = cpgrid.Grid(
+            layer_heights=data["layer_heights"],
+            layer_densities=data["layer_densities"],
+            layer_temperatures=data["layer_temperatures"],
+            layer_liquid_water_content=data["layer_liquid_water_content"],
+        )
+        grid_deb = cpgrid.Grid(
+            layer_heights=data["layer_heights"],
+            layer_densities=data["layer_densities"],
+            layer_temperatures=data["layer_temperatures"],
+            layer_liquid_water_content=data["layer_liquid_water_content"],
+        )
+
+        test_ice_height = (
+            grid_sno.get_total_height() - grid_sno.get_total_snowheight()
+        )
+        grid_sno.log_profile()
+        grid_deb.log_profile_debris()
+
+        conftest_boilerplate.assert_grid_profiles_equal(grid_sno, grid_deb)
+        compare_ice_height = (
+            grid_deb.get_total_height() - grid_deb.get_total_snowheight()
+        )
+        conftest_boilerplate.check_output(
+            compare_ice_height, float, test_ice_height
+        )
+
+    @pytest.mark.parametrize("arg_bury", [True, False])
+    def test_adaptive_profile_debris(
+        self, monkeypatch, conftest_mock_grid, conftest_boilerplate, arg_bury
+    ):
+        conftest_boilerplate.patch_variable(
+            monkeypatch, cpgrid.constants, {"merge_max": 100}
+        )
+        test_grid = conftest_mock_grid
+        test_grid.add_fresh_snow(0.1, 250.0, 273.15, 0.0)
+        test_grid.add_fresh_snow(0.1, 250.0, 273.15, 0.0)
+        test_grid.add_fresh_debris(0.2, 2840.0, 273.15, 0.0)
+        assert test_grid.grid[0].ntype == 1
+        if arg_bury:
+            test_grid.add_fresh_snow(0.1, 250.0, 273.15, 0.0)
+        test_nodes = test_grid.number_nodes
+        test_snowheight = test_grid.get_total_snowheight()
+        test_debris_height = test_grid.get_total_debris_height()
+        test_total_height = test_grid.get_total_height()
+        test_ice_height = (
+            test_grid.get_total_height()
+            - test_grid.get_total_snowheight()
+            - test_grid.get_total_debris_height()
+        )
+
+        test_grid.adaptive_profile_debris()
+
+        conftest_boilerplate.check_output(
+            test_grid.get_total_height(), float, test_total_height
+        )
+        assert test_grid.number_nodes < test_nodes
+        assert test_grid.get_number_debris_layers() == 1
+        if arg_bury:
+            assert test_grid.get_node_ntype(0) == 0
+        else:
+            assert test_grid.get_node_ntype(0) == 1
+
+        assert np.isclose(test_grid.get_total_snowheight(), test_snowheight)
+        conftest_boilerplate.check_output(
+            test_grid.get_total_debris_height(), float, test_debris_height
+        )
+        compare_ice_height = (
+            test_grid.get_total_height()
+            - test_grid.get_total_snowheight()
+            - test_grid.get_total_debris_height()
+        )
+        assert np.isclose(compare_ice_height, test_ice_height)
+
+        for density in test_grid.get_density():
+            assert density < 1000
+
+    def test_adaptive_profile_debris_clean_ice(
+        self, monkeypatch, conftest_mock_grid_values, conftest_boilerplate
+    ):
+        """Output of `adaptive_profile_debris` on a grid with no debris is
+        identical to `adaptive_profile`.
+        """
+        conftest_boilerplate.patch_variable(
+            monkeypatch, cpgrid.constants, {"merge_max": 100}
+        )
+        data = conftest_mock_grid_values.copy()
+
+        grid_sno = cpgrid.Grid(
+            layer_heights=data["layer_heights"],
+            layer_densities=data["layer_densities"],
+            layer_temperatures=data["layer_temperatures"],
+            layer_liquid_water_content=data["layer_liquid_water_content"],
+        )
+        grid_deb = cpgrid.Grid(
+            layer_heights=data["layer_heights"],
+            layer_densities=data["layer_densities"],
+            layer_temperatures=data["layer_temperatures"],
+            layer_liquid_water_content=data["layer_liquid_water_content"],
+        )
+
+        test_ice_height = (
+            grid_sno.get_total_height() - grid_sno.get_total_snowheight()
+        )
+        grid_sno.adaptive_profile()
+        grid_deb.adaptive_profile_debris()
+
+        conftest_boilerplate.assert_grid_profiles_equal(grid_sno, grid_deb)
+        compare_ice_height = (
+            grid_deb.get_total_height() - grid_sno.get_total_snowheight()
+        )
+        conftest_boilerplate.check_output(
+            compare_ice_height, float, test_ice_height
+        )
 
 
 class TestGridUpdate:
