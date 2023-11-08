@@ -143,10 +143,11 @@ def DebrisNode_get_layer_specific_heat(self) -> float64:
         )
 
     else:
-        cp = DebrisNode_get_layer_air_porosity(self) * constants.spec_heat_air
-        +(
-            1 - DebrisNode_get_layer_air_porosity(self)
-        ) * constants.spec_heat_debris
+        cp = (
+            DebrisNode_get_layer_air_porosity(self) * constants.spec_heat_air
+            + (1 - DebrisNode_get_layer_air_porosity(self))
+            * constants.spec_heat_debris
+        )
 
     return cp
 
@@ -179,21 +180,20 @@ def DebrisNode_get_layer_thermal_conductivity(self) -> float64:
         Thermal conductivity [:math:`W~m^{-1}~K^{-1}`].
     """
 
-    methods_allowed = ["sedimentary", "crystalline"]
-
-    if constants.debris_structure not in methods_allowed:
+    if constants.debris_structure == "sedimentary":
+        a = 0.0034
+        b = 0.0039
+    elif constants.debris_structure == "crystalline":
+        a = 0.0030
+        b = 0.0042
+    else:
+        methods_allowed = ["sedimentary", "crystalline"]
         message = (
             f'"{constants.debris_structure}" debris structure',
             f"is not allowed, must be one of",
             f'{", ".join(methods_allowed)}',
         )
         raise ValueError(message)
-    elif constants.debris_structure == "sedimentary":
-        a = 0.0034
-        b = 0.0039
-    elif constants.debris_structure == "crystalline":
-        a = 0.0030
-        b = 0.0042
 
     porosity = DebrisNode_get_layer_air_porosity(self)
     conductivity = (1 - porosity) * (
@@ -215,10 +215,10 @@ def DebrisNode_get_layer_thermal_diffusivity(self) -> float64:
 
     if constants.debris_structure == "crystalline":
         # Vosteen & Schellschmidt (2003)
-        K = 0.45 * DebrisNode_get_layer_thermal_conductivity(self)
+        k = 0.45 * DebrisNode_get_layer_thermal_conductivity(self)
     else:
-        K = DebrisNode_get_layer_thermal_conductivity(self) / (
+        k = DebrisNode_get_layer_thermal_conductivity(self) / (
             DebrisNode_get_layer_density(self)
             * DebrisNode_get_layer_specific_heat(self)
         )
-    return K
+    return k

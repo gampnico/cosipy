@@ -6,8 +6,8 @@ from numba import float64, int64, intp, njit, optional, typed, types
 from numba.experimental import jitclass
 from numba.extending import register_jitable
 
-import config
 import constants
+from config import use_debris
 from cosipy.cpkernel.node import *  # contains node.__all__
 
 __all__ = ["Grid"]
@@ -779,10 +779,10 @@ class Grid:
              englacial debris will prevent adjacent snow/ice nodes from
              merging.
 
-        (ii) Profile adjustment is done using layer similarity. Layers
-             with very similar temperature and density states are
-             joined. Similarity is determined from the user-specified
-             threshold values `temperature_threshold_merging` and
+        (ii) Profile adjustment uses layer similarity. Layers with very
+             similar temperature and density states are joined.
+             Similarity is determined from the user-specified threshold
+             values `temperature_threshold_merging` and
              `density_threshold_merging` in `constants.py`. The maximum
              number of merging steps per time step is specified by
              `merge_max`.
@@ -825,7 +825,7 @@ class Grid:
         # -------------------------------------------------------------------------
         # Remeshing options
         # -------------------------------------------------------------------------
-        if not config.use_debris:
+        if not use_debris:
             if constants.remesh_method == "log_profile":
                 self.log_profile()
             elif constants.remesh_method == "adaptive_profile":
@@ -841,7 +841,7 @@ class Grid:
             self.update_grid_debris()
 
     def merge_snow_with_glacier(self, idx):
-        """Merge a snow layer with a ice layer.
+        """Merge a snow layer with an ice layer.
 
         Merges a snow layer at location `idx` (density smaller than the
         `snow_ice_threshold` value in `constants.py`) with an ice layer
@@ -949,8 +949,6 @@ class Grid:
 
         Parameters
         ----------
-        height : float
-            Height of the fresh snow layer [:math:`m`].
         seconds : float
             seconds without snowfall [:math:`s`].
         """
@@ -995,7 +993,7 @@ class Grid:
 
         Parameters
         ----------
-        temperature : float
+        temperature : np.ndarray
             New layer temperatures [:math:`K`].
         """
         for idx in range(self.number_nodes):
@@ -1072,7 +1070,7 @@ class Grid:
 
     def get_snow_heights(self):
         """Get the heights of the snow layers."""
-        if not config.use_debris:
+        if not use_debris:
             snow_heights = [
                 self.grid[idx].get_layer_height()
                 for idx in range(self.number_nodes)
@@ -1096,7 +1094,7 @@ class Grid:
 
     def get_node_ntype(self, idx: int) -> int:
         """Get a node's subclass type if available."""
-        if not config.use_debris:
+        if not use_debris:
             return 0
         else:
             return self.grid[idx].get_layer_ntype()
@@ -1250,7 +1248,7 @@ class Grid:
 
     def get_number_snow_layers(self):
         """Get the number of snow layers (density<snow_ice_threshold)."""
-        if not config.use_debris:
+        if not use_debris:
             nlayers = [
                 1
                 for idx in range(self.number_nodes)
@@ -1434,7 +1432,7 @@ def _check_node_is_snow(self, idx: int) -> bool:
 
 
 @njit(cache=False)
-def _create_node_at_idx(grid_obj: Grid, idxNode: int) -> Node:
+def _create_node_at_idx(grid_obj: Grid, idx: int) -> Node:
     """Create a node instance with user data at a specific grid index.
 
     This function automatically hooks the appropriate constructor for
@@ -1444,7 +1442,7 @@ def _create_node_at_idx(grid_obj: Grid, idxNode: int) -> Node:
     ----------
     grid_obj : Grid
         A new Grid instance with an empty `grid` attribute.
-    idxNode : int
+    idx : int
         Grid index of node.
 
     Returns
@@ -1454,17 +1452,17 @@ def _create_node_at_idx(grid_obj: Grid, idxNode: int) -> Node:
     """
 
     if grid_obj.layer_ice_fraction is not None:
-        layer_IF = grid_obj.layer_ice_fraction[idxNode]
+        ice_fraction = grid_obj.layer_ice_fraction[idx]
     else:
-        layer_IF = None
+        ice_fraction = None
 
     # let cpkernel.node handle node type overrides
     node = _create_node(
-        grid_obj.layer_heights[idxNode],
-        grid_obj.layer_densities[idxNode],
-        grid_obj.layer_temperatures[idxNode],
-        grid_obj.layer_liquid_water_content[idxNode],
-        layer_IF,
+        grid_obj.layer_heights[idx],
+        grid_obj.layer_densities[idx],
+        grid_obj.layer_temperatures[idx],
+        grid_obj.layer_liquid_water_content[idx],
+        ice_fraction,
     )
     return node
 
@@ -1481,6 +1479,6 @@ def _init_grid(grid_obj: Grid):
 
     grid_obj.grid = typed.List.empty_list(_NODE_TYPE)
     # Fill the list with node instances containing user defined data
-    for idxNode in range(grid_obj.number_nodes):
-        fill_node = _create_node_at_idx(grid_obj, idxNode)
+    for idx_node in range(grid_obj.number_nodes):
+        fill_node = _create_node_at_idx(grid_obj, idx_node)
         grid_obj.grid.append(fill_node)

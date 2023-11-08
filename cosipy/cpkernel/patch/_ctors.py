@@ -97,7 +97,11 @@ class BaseNode(structref.StructRefProxy):
     Attributes:
         height (float): Height of the debris layer [:math:`m`].
         density (float): Debris density [:math:`kg~m^{-3}`].
+        temperature (float): Layer temperature [:math:`K`].
+        liquid_water_content (float): Liquid water content
+            [:math:`m~w.e.`].
         ice_fraction (float): Volumetric ice fraction [-].
+        refreeze (float): Amount of refrozen water [:math:`m~w.e.`].
         ntype (int): Node subtype:
             * 0: `Node` (snow/ice)
             * 1: `DebrisNode` (debris)
@@ -273,7 +277,7 @@ def BaseNode_ctor(
 ) -> BaseNode:
     """Constructor for BaseNode class in debris-covered simulations.
 
-    Declaring dynamic attributes is not necessary.
+    Declaring dynamic attributes is unnecessary.
 
     Args:
         height: Layer height [:math:`m`].
@@ -347,12 +351,11 @@ class Node(BaseNode):
     Attributes:
         height (float): Layer height [:math:`m`].
         snow_density (float): Layer snow density [:math:`kg~m^{-3}`].
-        temperature (loat): Layer temperature [:math:`K`].
+        temperature (float): Layer temperature [:math:`K`].
         liquid_water_content (float): Liquid water content
             [:math:`m~w.e.`].
         ice_fraction (float): Volumetric ice fraction [-].
-        refreeze (float): Amount of refrozen liquid water
-            [:math:`m~w.e.`].
+        refreeze (float): Amount of refrozen water [:math:`m~w.e.`].
         ntype (int): Node subtype. Default "0" for snow/ice.
     """
 
@@ -596,7 +599,7 @@ def NodeSubClass_ctor(
 ) -> Node:
     """Constructor for Node class in debris-covered simulations.
 
-    Declaring dynamic attributes is not necessary.
+    Declaring dynamic attributes is unnecessary.
 
     Args:
         height: Layer height [:math:`m`].
@@ -849,20 +852,20 @@ class DebrisNode(BaseNode):
     # ----------------------------------------------
 
     @njit(cache=False)
-    def set_layer_height(self, height) -> None:
+    def set_layer_height(self, height: float64) -> None:
         """Sets the node's layer height.
 
         Args:
-            float: Layer height [:math:`m`].
+            height: Layer height [:math:`m`].
         """
         self.height = height
 
     @njit(cache=False)
-    def set_layer_ice_fraction(self, ifr) -> None:
+    def set_layer_ice_fraction(self, ifr: float64) -> None:
         """Sets the node's ice fraction.
 
         Args:
-            ifr (float): Ice fraction [-].
+            ifr: Ice fraction [-].
         """
         self.ice_fraction = ifr
 
@@ -898,7 +901,7 @@ def DebrisNodeSubClass_ctor(
 ) -> DebrisNode:
     """Constructor for Node class in debris-covered simulations.
 
-    Declaring dynamic attributes is not necessary.
+    Declaring dynamic attributes is unnecessary.
 
     Args:
         height: Layer height [:math:`m`].

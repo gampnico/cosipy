@@ -11,8 +11,8 @@ To add a new method:
 4. Go to `cpkernel.patch.proxies` and follow the instructions there.
 """
 
-from numba import float64, int64, njit, optional
 import numpy as np
+from numba import float64, int64, njit, optional
 
 import constants
 
@@ -202,7 +202,7 @@ def Node_get_layer_thermal_diffusivity(self) -> float64:
     Returns:
         Thermal diffusivity [:math:`m^{2}~s^{-1}`].
     """
-    K = Node_get_layer_thermal_conductivity(self) / (
+    k = Node_get_layer_thermal_conductivity(self) / (
         Node_get_layer_density(self) * Node_get_layer_specific_heat(self)
     )
-    return K
+    return k

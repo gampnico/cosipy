@@ -530,12 +530,12 @@ def Node_ctor(
 ) -> Node:
     """Constructor for Node class in clean-ice simulations.
 
-    Declaring dynamic attributes is not necessary.
+    Declaring dynamic attributes is unnecessary.
 
     Args:
         height: Layer height [:math:`m`].
         density: Layer snow density [:math:`kg~m^{-3}`].
-        temperature  Layer temperature [:math:`K`].
+        temperature: Layer temperature [:math:`K`].
         liquid_water_content: Liquid water content [:math:`m~w.e.`].
         ice_fraction: Volumetric ice fraction [-].
     """
