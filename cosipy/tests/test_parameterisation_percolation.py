@@ -2,8 +2,7 @@ import numpy as np
 import pytest
 
 # import constants
-from COSIPY import start_logging
-from cosipy.cpkernel.grid import Grid
+import cosipy.cpkernel.grid as cpgrid
 from cosipy.modules.percolation import percolation
 
 
@@ -35,7 +34,7 @@ class TestParamPercolation:
         else:
             assert compare_mwe <= arg_mwe
 
-    def set_liquid_top_layer(self, grid: Grid, water: float):
+    def set_liquid_top_layer(self, grid: cpgrid.Grid, water: float):
         """Set liquid water content for top layer."""
         node_height_0 = grid.get_node_height(0)
         water_in = self.convert_mwe(mwe=water, depth=node_height_0)
@@ -66,7 +65,7 @@ class TestParamPercolation:
             assert new_water_layer_0 == 0.0
             assert new_water_layer_0 == start_water_layer_0
 
-    def get_layer_runoff(self, grid: Grid, idx: int) -> tuple:
+    def get_layer_runoff(self, grid: cpgrid.Grid, idx: int) -> tuple:
         """Calculate percolated runoff for a single layer."""
         assert isinstance(idx, int)
         theta_e = grid.get_node_irreducible_water_content(idx)
@@ -99,7 +98,7 @@ class TestParamPercolation:
         )
         assert np.isclose(GRID.get_node_liquid_water_content(arg_idx), theta_w)
 
-    def percolate_layer(self, grid: Grid, idx: int) -> Grid:
+    def percolate_layer(self, grid: cpgrid.Grid, idx: int) -> cpgrid.Grid:
         residual, theta_e, theta_w = self.get_layer_runoff(grid=grid, idx=idx)
         if residual > 0:
             grid.set_node_liquid_water_content(idx, theta_e)
@@ -176,18 +175,20 @@ class TestParamPercolation:
 
     # def test_percolation_percolate_single_layer(self,conftest_mock_grid):
 
-    @pytest.mark.parametrize("arg_melt",[0.0, 0.5, 1.0])
+    @pytest.mark.parametrize("arg_melt", [0.0, 0.5, 1.0])
     @pytest.mark.parametrize("arg_lwc", [0.0, 0.1, 0.5])
-    def test_percolation(self,capsys, conftest_mock_grid, arg_lwc, arg_melt):
+    def test_percolation(self, capsys, conftest_mock_grid, arg_lwc, arg_melt):
         GRID = conftest_mock_grid
         lwc_array = np.full((GRID.number_nodes), arg_lwc)
         GRID.set_liquid_water_content(lwc_array)
         np.testing.assert_allclose(GRID.get_liquid_water_content(), lwc_array)
 
-        initial_lwc = np.nansum(GRID.get_liquid_water_content()) + arg_melt/GRID.get_node_height(0)
+        initial_lwc = np.nansum(
+            GRID.get_liquid_water_content()
+        ) + arg_melt / GRID.get_node_height(0)
 
         runoff = percolation(GRID, arg_melt, self.timedelta)
-        captured = capsys.readouterr()  # because numba doesn't support warnings
+        captured = capsys.readouterr()  # numba doesn't support warnings
         final_lwc = np.nansum(GRID.get_liquid_water_content())
         final_mwe = runoff + final_lwc
 
@@ -203,11 +204,69 @@ class TestParamPercolation:
         #     final_mwe, self.melt_water + (1 - runoff) * (GRID.number_nodes - 1)
         # )
         # assert np.isclose(final_lwc, GRID.number_nodes * (1 - runoff))
-        
-        error_prefix="\nWARNING: When percolating, the initial LWC is not equal to final LWC"
-        timestep = GRID.old_snow_timestamp/self.timedelta
+
+        # error_prefix = "\nWARNING: When percolating, the initial LWC is not equal to final LWC"
+        # timestep = GRID.old_snow_timestamp / self.timedelta
 
         assert np.isclose(initial_lwc, final_lwc)
         # assert np.isclose(initial_mwe, final_mwe)
         # if LWCs are equal, captured.out is an empty string
         assert captured.out == ""
+
+    @pytest.mark.parametrize("arg_melt", [0.0, 0.05, 0.1, 1.0])
+    @pytest.mark.parametrize("arg_bury", [True, False])
+    def test_percolation_debris(
+        self,
+        conftest_boilerplate,
+        conftest_mock_grid_values,
+        arg_melt,
+        arg_bury,
+    ):
+        data = conftest_mock_grid_values.copy()
+        grid_sno = cpgrid.Grid(
+            layer_heights=data["layer_heights"],
+            layer_densities=data["layer_densities"],
+            layer_temperatures=data["layer_temperatures"],
+            layer_liquid_water_content=data["layer_liquid_water_content"],
+        )
+        grid_deb = cpgrid.Grid(
+            layer_heights=data["layer_heights"],
+            layer_densities=data["layer_densities"],
+            layer_temperatures=data["layer_temperatures"],
+            layer_liquid_water_content=data["layer_liquid_water_content"],
+        )
+        grid_deb.add_fresh_debris(0.2, 2840.0, 270.0, 0.0)
+
+        deb_idx = 0
+        if arg_bury:
+            grid_deb.add_fresh_snow(0.1, 2840.0, 270.0, 0.0)
+            grid_sno.add_fresh_snow(0.1, 2840.0, 270.0, 0.0)
+            deb_idx = 1
+
+        # total available water
+        test_lwc_sno = (
+            np.nansum(grid_sno.get_liquid_water_content()) + arg_melt
+        )
+        test_lwc_deb = (
+            np.nansum(grid_deb.get_liquid_water_content()) + arg_melt
+        )
+        conftest_boilerplate.check_output(test_lwc_deb, float, test_lwc_sno)
+
+        runoff_sno = percolation(grid_sno, arg_melt, self.timedelta)
+        runoff_deb = percolation(grid_deb, arg_melt, self.timedelta)
+        final_lwc_sno = (
+            np.nansum(grid_sno.get_liquid_water_content()) + runoff_sno
+        )
+        final_lwc_deb = (
+            np.nansum(grid_deb.get_liquid_water_content()) + runoff_deb
+        )
+        last_node_deb = grid_deb.grid[-1].liquid_water_content
+        last_node_sno = grid_sno.grid[-1].liquid_water_content
+
+        assert grid_deb.get_node_liquid_water_content(deb_idx) == 0.0
+        assert last_node_sno == 0.0
+        assert last_node_deb == 0.0
+        conftest_boilerplate.check_output(runoff_sno, float, runoff_deb)
+        conftest_boilerplate.check_output(final_lwc_deb, float, test_lwc_deb)
+        conftest_boilerplate.check_output(final_lwc_sno, float, test_lwc_sno)
+        conftest_boilerplate.check_output(final_lwc_deb, float, final_lwc_sno)
