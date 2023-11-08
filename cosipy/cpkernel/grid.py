@@ -1073,8 +1073,7 @@ class Grid:
         if not use_debris:
             snow_heights = [
                 self.grid[idx].get_layer_height()
-                for idx in range(self.number_nodes)
-                if (self.get_node_density(idx) < constants.snow_ice_threshold)
+                for idx in range(self.get_number_snow_layers())
             ]
         else:
             snow_heights = [
@@ -1086,11 +1085,20 @@ class Grid:
 
     def get_ice_heights(self):
         """Get the heights of the ice layers."""
-        return [
-            self.grid[idx].get_layer_height()
-            for idx in range(self.number_nodes)
-            if (self.get_node_density(idx) >= constants.snow_ice_threshold)
-        ]
+        if not use_debris:
+            ice_heights = [
+                self.grid[idx].get_layer_height()
+                for idx in range(self.number_nodes)
+                if (self.get_node_density(idx) >= constants.snow_ice_threshold)
+            ]
+        else:
+            ice_heights = [
+                self.grid[idx].get_layer_height()
+                for idx in range(self.number_nodes)
+                if (_check_node_is_ice(self, idx))
+            ]
+
+        return ice_heights
 
     def get_node_ntype(self, idx: int) -> int:
         """Get a node's subclass type if available."""
@@ -1428,6 +1436,23 @@ def _check_node_is_snow(self, idx: int) -> bool:
     """
     return (self.get_node_ntype(idx) == 0) & (
         self.get_node_density(idx) < constants.snow_ice_threshold
+    )
+
+
+@njit(cache=False)
+def _check_node_is_ice(self, idx: int) -> bool:
+    """Check if a layer is an ice layer.
+
+    Used by the debris implementation.
+
+    Args:
+        idx: Node index in `grid`.
+
+    Returns:
+        True if layer is snow, otherwise returns False.
+    """
+    return (self.get_node_ntype(idx) == 0) & (
+        self.get_node_density(idx) >= constants.snow_ice_threshold
     )
 
 
