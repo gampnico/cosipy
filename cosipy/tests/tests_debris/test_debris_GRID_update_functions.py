@@ -179,22 +179,22 @@ class TestGridInteractions:
 class TestGridRemeshing:
     """Tests if layers can remesh and merge."""
 
-    def fixt_add_debris_to_grid(self, grid_obj: cpgrid.Grid):
+    def add_debris_to_grid(self, grid_obj: cpgrid.Grid):
         """Add a debris layer."""
         grid_obj.add_fresh_debris(0.2, 2840.0, 273.15, 0.0)
 
-    def test_fixt_add_debris_to_grid(self, conftest_mock_grid):
+    def test_add_debris_to_grid(self, conftest_mock_grid):
         """Add debris layer using fixture."""
         test_grid = conftest_mock_grid
         test_nodes = test_grid.number_nodes
-        self.fixt_add_debris_to_grid(grid_obj=test_grid)
+        self.add_debris_to_grid(grid_obj=test_grid)
         assert test_grid.get_node_ntype(0) == 1
         for i in range(1, test_grid.number_nodes):
             assert test_grid.get_node_ntype(i) == 0
         assert test_grid.number_nodes == test_nodes + 1
         assert test_grid.get_number_debris_layers() == 1
 
-    def fixt_get_hydrostatic_pressure(
+    def get_hydrostatic_pressure(
         self, grid_obj, idx: int = 0, single: bool = False
     ) -> float:
         """Get hydrostatic pressure for two contiguous layers.
@@ -218,7 +218,7 @@ class TestGridRemeshing:
         return 9.81 * w0
 
     @pytest.mark.parametrize("arg_single", [True, False])
-    def test_fixt_get_hydrostatic_pressure(
+    def test_get_hydrostatic_pressure(
         self, conftest_mock_grid, conftest_boilerplate, arg_single
     ):
         test_grid = conftest_mock_grid
@@ -227,7 +227,7 @@ class TestGridRemeshing:
             test_w0 += test_grid.get_node_height(
                 1
             ) * test_grid.get_node_density(1)
-        compare_w0 = self.fixt_get_hydrostatic_pressure(
+        compare_w0 = self.get_hydrostatic_pressure(
             grid_obj=test_grid, idx=0, single=arg_single
         )
         conftest_boilerplate.check_output(compare_w0, float, 9.81 * test_w0)
@@ -236,21 +236,19 @@ class TestGridRemeshing:
         """TODO: remove as it's tested in test_GRID_update_functions"""
         test_grid = conftest_mock_grid
         ref_nodes = test_grid.number_nodes
-        self.fixt_add_debris_to_grid(test_grid)
+        self.add_debris_to_grid(test_grid)
         test_grid.add_fresh_snow(0.1, 250.0, 273.15, 0.0)
         test_nodes = test_grid.number_nodes
         assert test_nodes == ref_nodes + 2
 
         # snow-snow
         idx = test_nodes - ref_nodes
-        test_w0 = self.fixt_get_hydrostatic_pressure(test_grid, idx)
+        test_w0 = self.get_hydrostatic_pressure(test_grid, idx)
         test_height = sum(test_grid.get_height()[idx : idx + 2])
 
         test_grid.merge_nodes(idx)
 
-        compare_w0 = self.fixt_get_hydrostatic_pressure(
-            test_grid, idx, single=True
-        )
+        compare_w0 = self.get_hydrostatic_pressure(test_grid, idx, single=True)
         conftest_boilerplate.check_output(compare_w0, float, test_w0)
         conftest_boilerplate.check_output(
             test_grid.get_node_height(idx), float, test_height
@@ -258,14 +256,12 @@ class TestGridRemeshing:
 
         # glacier-glacier
         idx = test_grid.number_nodes - 2  # last two layers are ice
-        test_w0 = self.fixt_get_hydrostatic_pressure(test_grid, idx)
+        test_w0 = self.get_hydrostatic_pressure(test_grid, idx)
         test_height = sum(test_grid.get_height()[idx:])
 
         test_grid.merge_nodes(idx)
 
-        compare_w0 = self.fixt_get_hydrostatic_pressure(
-            test_grid, idx, single=True
-        )
+        compare_w0 = self.get_hydrostatic_pressure(test_grid, idx, single=True)
         conftest_boilerplate.check_output(compare_w0, float, test_w0)
         conftest_boilerplate.check_output(
             test_grid.get_node_height(idx), float, test_height
