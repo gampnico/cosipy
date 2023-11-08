@@ -1,8 +1,11 @@
 import numpy as np
+from numba import njit
 
 import constants
+from config import use_debris
 
 
+@njit(cache=False)
 def updateAlbedo(GRID) -> float:
     """Update the surface albedo.
 
@@ -14,11 +17,10 @@ def updateAlbedo(GRID) -> float:
     """
 
     albedo_allowed = ["Oerlemans98", "Lejeune13"]
-    if constants.albedo_method == "Oerlemans98":
-        alphaMod = method_Oerlemans(GRID)
-    elif constants.albedo_method == "Lejeune13":
+    if (use_debris) or (constants.albedo_method == "Lejeune13"):
         alphaMod = method_lejeune(GRID)  # snow-covered debris
-
+    elif constants.albedo_method == "Oerlemans98":
+        alphaMod = method_Oerlemans(GRID)
     else:
         error_message = (
             f'Albedo method = "{constants.albedo_method}"',
@@ -30,6 +32,7 @@ def updateAlbedo(GRID) -> float:
     return alphaMod
 
 
+@njit(cache=False)
 def get_surface_properties(GRID) -> tuple:
     """Get snowpack properties.
 
@@ -67,6 +70,7 @@ def get_surface_properties(GRID) -> tuple:
     return fresh_snow_height, fresh_snow_timestamp, hours_since_snowfall
 
 
+@njit(cache=False)
 def get_simple_albedo(elapsed_time: float) -> float:
     """Get surface albedo neglecting snowpack depth.
 
@@ -86,6 +90,7 @@ def get_simple_albedo(elapsed_time: float) -> float:
     return albedo
 
 
+@njit(cache=False)
 def method_Oerlemans(GRID) -> float:
     """Get surface albedo using method from Oerlemans & Knap (1998).
 
@@ -103,11 +108,7 @@ def method_Oerlemans(GRID) -> float:
         h = GRID.get_total_snowheight()  # np.sum(GRID.get_height()[0:idx])
 
         # Surface albedo according to Oerlemans & Knap (1998), JGR
-        alphaSnow = constants.albedo_firn + (
-            constants.albedo_fresh_snow - constants.albedo_firn
-        ) * np.exp(
-            (-hours_since_snowfall) / (constants.albedo_mod_snow_aging * 24.0)
-        )
+        alphaSnow = get_simple_albedo(elapsed_time=hours_since_snowfall)
         alphaMod = alphaSnow + (constants.albedo_ice - alphaSnow) * np.exp(
             (-1.0 * h) / (constants.albedo_mod_snow_depth / 100.0)
         )
@@ -127,6 +128,7 @@ implementation of considering the surface temperature?
 """
 
 
+@njit(cache=False)
 def get_albedo_weight_lejeune(snow_depth: float) -> float:
     """Weighting for snow-covered debris albedo (Lejeune et al., 2007).
 
@@ -146,6 +148,7 @@ def get_albedo_weight_lejeune(snow_depth: float) -> float:
     return albedo_weight
 
 
+@njit(cache=False)
 def method_lejeune(GRID) -> float:
     """Get snow-covered debris albedo (Lejeune et al., 2007).
 
@@ -156,16 +159,18 @@ def method_lejeune(GRID) -> float:
         Albedo for snow-covered debris.
     """
 
-    fresh_snow_height, _, hours_since_snowfall = get_surface_properties(
-        GRID=GRID
-    )
+    if GRID.get_node_ntype(0) == 0:
+        fresh_snow_height, _, hours_since_snowfall = get_surface_properties(
+            GRID=GRID
+        )
 
-    albedo_weight = get_albedo_weight_lejeune(snow_depth=fresh_snow_height)
-    albedo_snow = get_simple_albedo(elapsed_time=hours_since_snowfall)
-
-    albedo = (
-        albedo_weight * albedo_snow
-        + (1 - albedo_weight) * constants.albedo_debris
-    )
+        albedo_weight = get_albedo_weight_lejeune(snow_depth=fresh_snow_height)
+        albedo_snow = get_simple_albedo(elapsed_time=hours_since_snowfall)
+        albedo = (
+            albedo_weight * albedo_snow
+            + (1 - albedo_weight) * constants.albedo_debris
+        )
+    else:  # no need to calculate weights
+        albedo = constants.albedo_debris
 
     return albedo

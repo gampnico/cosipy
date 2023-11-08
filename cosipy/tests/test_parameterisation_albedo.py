@@ -9,7 +9,13 @@ from COSIPY import start_logging
 class TestParamAlbedoUpdate:
     """Tests get/set methods for albedo properties."""
 
-    def test_updateAlbedo(self, conftest_mock_grid):
+    def test_updateAlbedo(
+        self, monkeypatch, conftest_boilerplate, conftest_mock_grid
+    ):
+        conftest_boilerplate.patch_variable(
+            monkeypatch, module_albedo, {"use_debris": False}
+        )
+
         grid = conftest_mock_grid
 
         albedo = module_albedo.updateAlbedo(grid)
@@ -20,8 +26,11 @@ class TestParamAlbedoUpdate:
         )
 
     def test_updateAlbedo_ice(
-        self, conftest_mock_grid_ice, conftest_boilerplate
+        self, monkeypatch, conftest_mock_grid_ice, conftest_boilerplate
     ):
+        conftest_boilerplate.patch_variable(
+            monkeypatch, module_albedo, {"use_debris": False}
+        )
         grid_ice = conftest_mock_grid_ice
         albedo = module_albedo.updateAlbedo(grid_ice)
         assert conftest_boilerplate.check_output(
@@ -99,6 +108,9 @@ class TestParamAlbedoSelection:
 
         conftest_boilerplate.patch_variable(
             monkeypatch, module_albedo.constants, {"albedo_method": arg_method}
+        )
+        conftest_boilerplate.patch_variable(
+            monkeypatch, module_albedo, {"use_debris": False}
         )
         assert constants.albedo_method == arg_method
         error_message = (
