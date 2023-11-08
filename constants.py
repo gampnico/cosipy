@@ -76,6 +76,7 @@ albedo_debris = 0.2                             # albedo of debris [-] (Nicholso
 roughness_fresh_snow = 0.24                     # surface roughness length for fresh snow [mm] (Moelg et al. 2012, TC)
 roughness_ice = 1.7                             # surface roughness length for ice [mm] (Moelg et al. 2012, TC)
 roughness_firn = 4.0                            # surface roughness length for aged snow [mm] (Moelg et al. 2012, TC)
+roughness_debris = 15.0                         # surface roughness length for debris [mm]. Median: 15-37. Nicholson & Stiperski, 2020)
 aging_factor_roughness = 0.0026                 # effect of ageing on roughness lenght (hours) 60 days from 0.24 to 4.0 => 0.0026
 
 snow_ice_threshold = 900.0                      # pore close of density [kg m^(-3)]
