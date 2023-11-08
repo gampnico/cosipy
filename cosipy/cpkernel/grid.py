@@ -313,7 +313,7 @@ class Grid:
         """
 
         if _check_node_ntype(
-            self, idx=idx + 1, ntype=self.get_node_ntype(idx)
+            self, idx=idx, ntype=self.get_node_ntype(idx + 1)
         ):
             self.correct_layer(idx, min_height)
 
@@ -332,7 +332,6 @@ class Grid:
             if no index is provided.
         min_height : float
             New layer height [:math:`m`].
-
         """
         # New layer height by adding up the height of the two layers
         total_height = self.get_node_height(idx)
@@ -355,7 +354,25 @@ class Grid:
             # Recalculate total height
             total_height = self.get_node_height(idx)
 
-        # Only merge snow-snow or glacier-glacier, and if the height is greater than the minimum height
+        # Merge with subsequent layers
+        self.merge_layer_correction(idx, total_height, min_height)
+
+    def merge_layer_correction(self, idx, total_height, min_height):
+        """Merges a corrected layer with subsequent layers.
+
+        Only merge snow-snow or glacier-glacier, and if the height is
+        greater than the minimum height.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the node to be removed.
+        min_height : float
+            New layer height [:math:`m`].
+        total_height : float
+            Current node height [:math:`m`].
+        """
+
         if total_height > min_height:
             # Get new heights for layer 0 and 1
             h0 = min_height
@@ -418,14 +435,12 @@ class Grid:
                     (if0, por0, lwc0),
                 )
 
-            # Update node properties
-            self.update_node(idx, h0, T0, if0, lwc0)
+            self.update_node(idx, h0, T0, if0, lwc0)  # Update node properties
             self.grid.insert(
                 idx + 1, Node(h1, self.get_node_density(idx), T1, lwc1, if1)
             )
 
-            # Update node counter
-            self.number_nodes += 1
+            self.number_nodes += 1  # Update node counter
 
     def set_next_height(
         self, remesh_depth: float, current_height: float
@@ -558,22 +573,25 @@ class Grid:
         hrest = (
             self.get_total_height()
             - self.get_total_snowheight()
-            - self.get_total_debris_height()
+            # - self.get_total_debris_height()
         )
 
         idx = self.get_number_snow_layers() + n_debris
-        n_debris = 0  # already processed debris layers in snowpack
+        n_debris = 0  # discount debris layers in snowpack
         while idx < self.get_number_layers():
-            if not _check_node_ntype(self, idx, 1):
-                if (hrest >= last_layer_height) & (
-                    idx + 1 < self.get_number_layers()
-                ):
-                    self.correct_layer_selector(idx, last_layer_height)
+            if _check_node_is_ice(self, idx):
+                if hrest >= last_layer_height:
+                    if idx + 1 < self.get_number_layers():
+                        self.correct_layer_selector(idx, last_layer_height)
+                    else:  # skip the while loop in correct_layer
+                        self.merge_layer_correction(
+                            idx, self.get_node_height(idx), last_layer_height
+                        )
                     hrest, last_layer_height = self.set_next_height(
                         hrest, last_layer_height
                     )
                 elif (hrest < last_layer_height) & (
-                    not _check_node_ntype(self, idx - 1, 1)
+                    _check_node_ntype(self, idx - 1, 0)
                 ):
                     self.merge_nodes(idx - 1)
             else:
