@@ -64,3 +64,43 @@ class TestParamRadiation:
         assert isinstance(compare_melt, float)
         compare_si = melt_si[1]
         conftest_boilerplate.check_output(compare_si, float, test_si)
+
+    @pytest.mark.parametrize(
+        "arg_density", [250.0, constants.snow_ice_threshold + 1]
+    )
+    @pytest.mark.parametrize("arg_bury", [True, False])
+    def test_method_Bintanja_debris(
+        self,
+        monkeypatch,
+        conftest_mock_grid,
+        conftest_boilerplate,
+        arg_density,
+        arg_bury,
+    ):
+        conftest_boilerplate.patch_variable(
+            monkeypatch,
+            module_penrad.constants,
+            {"penetrating_method": "Bintanja95"},
+        )
+
+        test_grid = conftest_mock_grid
+        test_grid.add_fresh_debris(0.1, 2840.0, 273.15, 0.0)
+        if arg_bury:
+            test_grid.add_fresh_snow(0.1, arg_density, 270.15, 0.0)
+
+        test_swnet = 800.0
+        if not arg_bury:
+            test_si = 0.0
+        elif arg_density <= constants.snow_ice_threshold:
+            test_si = test_swnet * 0.1
+        else:
+            test_si = test_swnet * 0.2
+
+        melt_si = module_penrad.method_Bintanja_debris(
+            GRID=test_grid, SWnet=test_swnet, dt=constants.dt
+        )
+        assert isinstance(melt_si, tuple)
+        compare_melt = melt_si[0]
+        assert isinstance(compare_melt, float)
+        compare_si = melt_si[1]
+        conftest_boilerplate.check_output(compare_si, float, test_si)

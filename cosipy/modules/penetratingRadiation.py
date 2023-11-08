@@ -6,9 +6,12 @@ from config import use_debris
 
 
 def penetrating_radiation(GRID, SWnet, dt):
-    penetrating_allowed = ['Bintanja95']
-    if penetrating_method == 'Bintanja95':
-        subsurface_melt, Si = method_Bintanja(GRID, SWnet, dt)
+    penetrating_allowed = ["Bintanja95"]
+    if constants.penetrating_method == "Bintanja95":
+        if use_debris:
+            subsurface_melt, Si = method_Bintanja_debris(GRID, SWnet, dt)
+        else:
+            subsurface_melt, Si = method_Bintanja(GRID, SWnet, dt)
     else:
         error_msg = (
             f'Penetrating method = "{constants.penetrating_method}"',
@@ -134,4 +137,43 @@ def method_Bintanja(GRID, SWnet: float, dt: float) -> tuple:
     E = Si * np.abs(np.diff(decay))  # TODO: isn't this Si(z)?
 
     subsurface_melt = get_subsurface_melt(GRID, E, dt)
+    return subsurface_melt, Si
+
+
+@njit(cache=False)
+def method_Bintanja_debris(GRID, SWnet: float, dt: float) -> tuple:
+    """Get penetrating radiation and subsurface meltwater.
+
+    Adapted from Bintanja and Van Den Broeke, (1995) and Lejeune et al.,
+    (2013). Shortwave radiation cannot penetrate a debris layer.
+
+    Args:
+        GRID (Grid): Glacier data mesh.
+        SWnet: Incoming net shortwave radiation [Wm^-2].
+        dt: Timestep duration [s].
+
+    Returns:
+        tuple[float, float]: Subsurface melt and penetrated shortwave
+        radiation at the surface.
+    """
+    subsurface_melt = 0.0  # Store total subsurface melt
+
+    # Absorption of shortwave radiation
+    depth = np.append(  # numba doesn't support np.insert
+        0.0, np.array(GRID.get_depth())
+    )
+    if GRID.get_node_ntype(0) == 1:
+        Si = 0.0
+        decay = np.exp(0.0 * -depth)
+    elif GRID.get_node_density(0) <= constants.snow_ice_threshold:
+        Si = float(SWnet) * 0.1
+        decay = np.exp(17.1 * -depth)
+    else:
+        Si = float(SWnet) * 0.2
+        decay = np.exp(2.5 * -depth)
+
+    E = Si * np.abs(np.diff(decay))  # TODO: isn't this Si(z)?
+
+    subsurface_melt = get_subsurface_melt(GRID, E, dt)
+
     return subsurface_melt, Si
