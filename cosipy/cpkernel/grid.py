@@ -297,7 +297,7 @@ class Grid:
         # Remove the second layer
         self.remove_node([idx + 1])
 
-    def correct_layer_selector(self, idx, min_height):
+    def correct_layer_selector(self, idx: int, min_height: float):
         """Restrict layer correction to matching layer types.
 
         Used by the debris implementation. Prevents debris merging with
@@ -315,7 +315,7 @@ class Grid:
         if _check_node_ntype(
             self, idx=idx, ntype=self.get_node_ntype(idx + 1)
         ):
-            self.correct_layer(idx, min_height)
+            self.correct_layer_debris(idx, min_height)
 
     def correct_layer(self, idx, min_height):
         """Adjust the height of a given layer.
@@ -357,7 +357,52 @@ class Grid:
         # Merge with subsequent layers
         self.merge_layer_correction(idx, total_height, min_height)
 
-    def merge_layer_correction(self, idx, total_height, min_height):
+    def correct_layer_debris(self, idx: int, min_height: float64):
+        """Adjust the height of a given layer.
+
+        Faster implementation of `correct_layer` for debris.
+
+        Adjusts the height of the layer at index `idx` to the given
+        height `min_height`. First the layers below are merged until the
+        height is sufficiently large to allow for the adjustment. Then
+        the layer is merged with the subsequent layer.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the node to be removed. The first node is removed
+            if no index is provided.
+        min_height : float
+            New layer height [:math:`m`].
+        """
+        # New layer height by adding up the height of the two layers
+        total_height = self.get_node_height(idx)
+
+        # Merge subsequent layer with underlying layers until height of
+        # the layer is greater than the given height.
+        while (total_height < min_height) & (
+            idx + 1 < self.get_number_layers()
+        ):
+            if (_check_node_is_snow(self, idx)) & (
+                _check_node_is_snow(self, idx + 1)
+            ):
+                self.merge_nodes(idx)
+            elif (_check_node_is_ice(self, idx)) & (
+                _check_node_is_ice(self, idx + 1)
+            ):
+                self.merge_nodes(idx)
+            else:
+                break
+
+            # Recalculate total height
+            total_height = self.get_node_height(idx)
+
+        # Merge with subsequent layers
+        self.merge_layer_correction(idx, total_height, min_height)
+
+    def merge_layer_correction(
+        self, idx: int, total_height: float, min_height: float
+    ):
         """Merges a corrected layer with subsequent layers.
 
         Only merge snow-snow or glacier-glacier, and if the height is
