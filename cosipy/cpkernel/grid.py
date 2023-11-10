@@ -935,7 +935,7 @@ class Grid:
 
             # self.check('Merge snow with glacier function')
 
-    def remove_melt_weq(self, melt, idx=0):
+    def remove_melt_weq(self, melt: float, idx: int = 0) -> float:
         """Remove mass from a layer.
 
         Reduces the mass/height of layer `idx` by the available melt
@@ -948,17 +948,22 @@ class Grid:
         idx : int
             Index of the layer. If no value is given, the function acts
             on the first layer.
-        """
-        lwc_from_layers = 0
 
-        while melt > 0:
+        Returns
+        -------
+        lwc_from_layers : float
+            Liquid water content from removed layers.
+        """
+        lwc_from_layers = 0.0
+
+        while melt > 0.0:
             # Get SWE of layer
             SWE = self.get_node_height(idx) * (
                 self.get_node_density(idx) / constants.water_density
             )
             # Remove melt from layer and set new snowheight
             if _check_node_is_debris(self, idx):
-                idx = idx + 1
+                idx = idx + 1  # debris cannot melt
             elif melt < SWE:
                 self.set_node_height(
                     idx,
@@ -981,6 +986,30 @@ class Grid:
             self.set_fresh_snow_props_height(self.new_snow_height - melt)
 
         return lwc_from_layers
+
+    def remove_melt_weq_debris(self, melt: float, idx: int = 0) -> float:
+        """Remove mass from a layer.
+
+        Reduces the mass/height of a snow/ice layer by the available
+        melt energy.
+
+        Parameters
+        ----------
+        melt : float
+            Snow water equivalent of melt [:math:`m~w.e.`].
+        idx : int
+            Index of the layer. If no value is given, the function acts
+            on the first layer.
+
+        Returns
+        -------
+        lwc_from_layers : float
+            Liquid water content from removed layers.
+        """
+        if not _check_node_is_debris(self, 0):
+            return self.remove_melt_weq(melt, idx)
+        else:
+            return 0.0
 
     # ===============================================================================
     # Getter and setter functions
