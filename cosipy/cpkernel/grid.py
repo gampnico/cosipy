@@ -618,7 +618,7 @@ class Grid:
         hrest = (
             self.get_total_height()
             - self.get_total_snowheight()
-            # - self.get_total_debris_height()
+            - self.get_total_debris_height()
         )
 
         idx = self.get_number_snow_layers() + n_debris
@@ -1339,6 +1339,17 @@ class Grid:
     def get_total_snowheight(self, verbose=False):
         """Get the total snowheight (density<snow_ice_threshold)."""
         return sum(self.get_snow_heights())
+
+    def get_supraglacial_snow(self) -> float:
+        """Get the snow height above the debris layer."""
+        idx = 0
+        heights = 0.0
+        while (idx < self.number_nodes) & (
+            not _check_node_is_debris(self, idx)
+        ):
+            heights += self.get_node_height(idx)
+            idx += 1
+        return heights
 
     def get_total_debris_height(self):
         """Get the sum of all debris layer heights."""
