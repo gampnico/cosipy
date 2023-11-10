@@ -14,7 +14,13 @@ def main():
 
     createDEM_v1(file_path=args.input_file)
     # createDEM_v2(file_path=args.input_file)
-    add_scalar(var=args.name, timestamp=args.timestamp, mean=args.mean)
+    add_scalar(
+        file_path=args.input_file,
+        var=args.name,
+        timestamp=args.timestamp,
+        mean=args.mean,
+        gltf=args.gltf,
+    )
 
 
 def check_2d(array: xr.DataArray):
@@ -24,8 +30,8 @@ def check_2d(array: xr.DataArray):
         ValueError: Spatial coordinates are not 2D.
     """
 
-    for coord in array.coords:
-        if coord not in ["time", "layer"] and len(array.coords[coord]) <= 1:
+    for dimension in array.dims:
+        if dimension not in ["time", "layer"] and (array.dims[dimension]) <= 1:
             raise ValueError("Spatial coordinates are not 2D.")
 
 
@@ -45,9 +51,11 @@ def get_selection(
     """
 
     if not mean:
-        data = array.sel(time=timestamp)
+        data = array.sel(time=timestamp, method="nearest")
     else:
-        data = array.sel(time=timestamp).mean(dim="time", skipna=True)
+        data = array.sel(time=timestamp, method="nearest").mean(
+            dim="time", skipna=True
+        )
 
     return data
 
@@ -81,8 +89,8 @@ def create_points(data: xr.Dataset) -> vtk.vtkPoints:
     if "south_north" in data.keys():
         for i, j in product(data[longitude].values, data[latitude].values):
             points.InsertNextPoint(
-                data[latitude].sel(south_north=j),
                 data[longitude].sel(west_east=i),
+                data[latitude].sel(south_north=j),
                 data.HGT.sel(west_east=i, south_north=j).values / 6370000.0,
             )
     else:
@@ -122,6 +130,32 @@ def write_unstructured_grid_to_file(
     writer.Write()
 
 
+def write_render_to_gltf(
+    render: vtk.vtkRenderer,
+    variable: str,
+    timestamp: str,
+):
+    """Writes rendered image to a 3D .gltf object.
+
+    Raises:
+        AttributeError: GLTF export is only supported in VTK >9.2.
+    """
+
+    print("Saving 3D object...\n")
+    output_file = set_filename(name=variable, timestamp=timestamp, fmt="gltf")
+    try:
+        writer = vtk.vtkGLTFExporter()
+        writer.InlineDataOn()
+        writer.SetActiveRenderer(render)
+        writer.SetRenderWindow(render.GetRenderWindow())
+        writer.SetFileName(output_file)
+        writer.Update()
+        writer.Write()
+        print("3D object saved.\n")
+    except AttributeError:
+        print("GLTF export is only supported in VTK >9.2.")
+
+
 def write_render_to_image(
     render: vtk.vtkRenderLargeImage, variable: str, timestamp: str
 ):
@@ -133,10 +167,11 @@ def write_render_to_image(
     output_file = set_filename(name=variable, timestamp=timestamp)
     writer.SetFileName(output_file)
     writer.Write()
+    print("Image saved.\n")
 
 
 def smooth_mesh(mesh: vtk.vtkPolyData) -> vtk.vtkButterflySubdivisionFilter:
-    """Smoothes mesh using butterfly subdivision."""
+    """Smooths mesh using butterfly subdivision."""
 
     subdivision = vtk.vtkButterflySubdivisionFilter()
     subdivision.SetInputData(mesh)
@@ -179,7 +214,7 @@ def createDEM_v1(
     polydata = vtk.vtkPolyData()
     polydata.SetPoints(points)
 
-    delaunay = vtk.vtkDelaunay2D()
+    delaunay = vtk.vtkDelaunay3D()
     delaunay.SetInputData(polydata)
     delaunay.Update()
 
@@ -223,16 +258,24 @@ def createDEM_v2(
     write_unstructured_grid_to_file(grid, "cosipy.vtu")
 
 
-def add_scalar(var: str, timestamp: str, mean: bool = False):
+def add_scalar(
+    file_path: str,
+    var: str,
+    timestamp: str,
+    mean: bool = False,
+    gltf: bool = False,
+):
     """Selects data from array at specific time or as a daily mean.
 
     .. todo:: support WRF coordinates (south_north/west_east)
 
     Args:
+        file_path: Path to netcdf file.
         var: Short name of variable in data.
         timestamp: Time index of target data.
         mean: If True, computes and selects the daily mean. Otherwise,
             selects data at ``timestamp``. Default False.
+        gltf: If True, export as a 3D glTF object. Default False.
 
     Returns:
         Array selection at target time.
@@ -247,7 +290,7 @@ def add_scalar(var: str, timestamp: str, mean: bool = False):
     point_locator.SetDataSet(vtk_file.GetOutput())
     point_locator.BuildLocator()
 
-    ds = xr.open_dataset("../../data/output/Zhadang_ERA5_20090101-20090110.nc")
+    ds = xr.open_dataset(file_path)
     ds = get_selection(array=ds, timestamp=timestamp, mean=mean)
 
     latitude, longitude = get_coords(data=ds)
@@ -282,7 +325,7 @@ def add_scalar(var: str, timestamp: str, mean: bool = False):
 
     write_unstructured_grid_to_file(vtk_file.GetOutput(), "cosipy.vtu")
 
-    plotSurface(domain=vtk_file, variable=var, timestamp=timestamp)
+    plotSurface(domain=vtk_file, variable=var, timestamp=timestamp, gltf=gltf)
 
 
 def convert_unstructured_to_polydata(
@@ -303,15 +346,24 @@ def convert_unstructured_to_polydata(
     return polydata
 
 
-def set_filename(name: str, timestamp: str) -> str:
-    """Creates a file name from timestamp and variable name."""
+def set_filename(name: str, timestamp: str, fmt: str = "png") -> str:
+    """Creates a file name from timestamp and variable name.
+
+    Args:
+        name: Name of data variable.
+        timestamp: Time of data collection.
+        fmt: File format. Default "png".
+
+    Returns:
+        Output file name.
+    """
 
     if not isinstance(timestamp, str):
         img_id = timestamp.strftime("%Y%m%d")
     else:
         img_id = timestamp
     img_id = re.sub(r"\W+", "", str(img_id))  # avoid illegal file names
-    img_id = f"{img_id}_{name}_vtk.png"
+    img_id = f"{img_id}_{name}_vtk.{fmt}"
 
     return img_id
 
@@ -321,14 +373,19 @@ def plotSurface(
     variable: str,
     timestamp: str = "",
     contours: int = 10,
-):
+    gltf: bool = False,
+) -> vtk.vtkRenderLargeImage:
     """Plot surface with contoured data.
 
     Args:
         domain: Reader for glacier surface XML data.
         variable: Short name of target variable.
-        timestamp:
+        timestamp: Time index of target data. Default empty string.
         contours: Number of contours to plot. Default 10.
+        gltf: Export as 3D glTF object. Default False.
+
+    Returns:
+        Large image render of plotted data.
     """
 
     print(domain)
@@ -341,7 +398,7 @@ def plotSurface(
     lut = vtk.vtkLookupTable()
     lut.SetNumberOfTableValues(num_contours + 1)
     if variable.lower() == "hgt":
-        lut.SetHueRange(0.75, 0.1)  # blue: low altitude)
+        lut.SetHueRange(0.75, 0.1)  # blue: low altitude
     else:
         lut.SetHueRange(0.1, 0.75)  # matches cmap in plot_cosipy_profiles
     lut.SetNanColor(1, 1, 1, 0.5)
@@ -349,7 +406,9 @@ def plotSurface(
 
     # mapper
     cone_mapper = vtk.vtkDataSetMapper()
-    cone_mapper.SetInputData(domain.GetOutput())
+    cone_mapper.SetInputData(
+        convert_unstructured_to_polydata(domain.GetOutput())  # for 3D export
+    )
     cone_mapper.SetScalarModeToUsePointData()
     cone_mapper.ScalarVisibilityOn()
     cone_mapper.SetLookupTable(lut)
@@ -414,6 +473,11 @@ def plotSurface(
         render=render_large, variable=variable, timestamp=timestamp
     )
 
+    if gltf:
+        write_render_to_gltf(
+            render=render, variable=variable, timestamp=timestamp
+        )
+
     return render_large
 
 
@@ -428,6 +492,8 @@ def parse_arguments() -> argparse.Namespace:
     Optional switches:
         -h, --help              Show this help message and exit.
         -m, --mean              Plot daily mean instead of timestep.
+                                    Default False.
+        -g, --gltf              Export plot as a 3D glTF object.
                                     Default False.
     """
 
@@ -473,6 +539,15 @@ def parse_arguments() -> argparse.Namespace:
         dest="mean",
         action="store_true",
         help="Plot daily mean instead of timestep",
+    )
+
+    # Optional switches
+    parser.add_argument(
+        "-g",
+        "--gltf",
+        dest="gltf",
+        action="store_true",
+        help="Export plot as a 3D glTF object",
     )
 
     arguments = parser.parse_args()

@@ -246,7 +246,7 @@ class TestBoilerplate:
 
     ..code-block:: python
 
-        def test_foo(self, conftest_boilerplate)"
+        def test_foo(self, conftest_boilerplate):
 
             foobar = [...]
             conftest_boilerplate.bar(foobar)

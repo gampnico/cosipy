@@ -82,7 +82,7 @@ class TestParamPercolation:
         theta_w = GRID.get_node_liquid_water_content(arg_idx)
 
         residual, new_theta_e, new_theta_w = self.get_layer_runoff(
-            grid=GRID, idx=arg_idx
+            grid=GRID, idx=int(arg_idx)
         )
 
         assert isinstance(residual, float)
@@ -179,7 +179,7 @@ class TestParamPercolation:
     @pytest.mark.parametrize("arg_lwc", [0.0, 0.1, 0.5])
     def test_percolation(self, capsys, conftest_mock_grid, arg_lwc, arg_melt):
         GRID = conftest_mock_grid
-        lwc_array = np.full((GRID.number_nodes), arg_lwc)
+        lwc_array = np.full(GRID.number_nodes, arg_lwc)
         GRID.set_liquid_water_content(lwc_array)
         np.testing.assert_allclose(GRID.get_liquid_water_content(), lwc_array)
 

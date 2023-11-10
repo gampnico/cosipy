@@ -1097,7 +1097,7 @@ class Grid:
         """Set node height."""
         self.grid[idx].set_layer_height(height)
 
-    def set_height(self, height):
+    def set_height(self, height: np.ndarray):
         """Set the height profile."""
         for idx in range(self.number_nodes):
             self.grid[idx].set_layer_height(height[idx])
@@ -1108,7 +1108,7 @@ class Grid:
         """Set liquid water content of a node."""
         self.grid[idx].set_layer_liquid_water_content(liquid_water_content)
 
-    def set_liquid_water_content(self, liquid_water_content):
+    def set_liquid_water_content(self, liquid_water_content: np.ndarray):
         """Set the liquid water content profile."""
         for idx in range(self.number_nodes):
             self.grid[idx].set_layer_liquid_water_content(
@@ -1119,7 +1119,7 @@ class Grid:
         """Set liquid ice_fraction of a node."""
         self.grid[idx].set_layer_ice_fraction(ice_fraction)
 
-    def set_ice_fraction(self, ice_fraction):
+    def set_ice_fraction(self, ice_fraction: np.ndarray):
         """Set the ice fraction profile."""
         for idx in range(self.number_nodes):
             self.grid[idx].set_layer_ice_fraction(ice_fraction[idx])
@@ -1128,7 +1128,7 @@ class Grid:
         """Set the refreezing of a node."""
         self.grid[idx].set_layer_refreeze(refreeze)
 
-    def set_refreeze(self, refreeze):
+    def set_refreeze(self, refreeze: np.ndarray):
         """Set the refreezing profile."""
         for idx in range(self.number_nodes):
             self.grid[idx].set_refreeze(refreeze[idx])
@@ -1400,9 +1400,9 @@ class Grid:
             n = self.number_nodes
 
         print(
-            "Node no., Layer height [m], Temperature [K], Density [kg m^-3]",
-            "LWC [-], LW [m], CC [J m^-2], Porosity [-], Refreezing [m w.e.]",
-            "Irreducible water content [-]",
+            "Node no., Layer height [m], Temperature [K], Density [kg m^-3], \
+               LWC [-], LW [m], CC [J m^-2], Porosity [-], Refreezing [m w.e.], \
+               Irreducible water content [-]"
         )
 
         for i in range(n):

@@ -1,7 +1,7 @@
 import pytest
 
 import constants
-import cosipy.modules.penetratingRadiation as module_penrad
+import cosipy.modules.penetratingRadiation as pRad
 
 
 class TestParamRadiation:
@@ -19,19 +19,14 @@ class TestParamRadiation:
         test_grid = conftest_mock_grid
         allow_list = ["Bintanja95"]
         conftest_boilerplate.patch_variable(
-            monkeypatch,
-            module_penrad.constants,
-            {"penetrating_method": "WrongMethod"},
+            monkeypatch, pRad, {"penetrating_method": "WrongMethod"}
         )
         error_msg = (
-            "Penetrating method =",
-            f'"{module_penrad.constants.penetrating_method}"',
+            f'Penetrating method = "{pRad.penetrating_method}" ',
             f'is not allowed, must be one of {", ".join(allow_list)}',
         )
-        with pytest.raises(ValueError, match=" ".join(error_msg)):
-            module_penrad.penetrating_radiation(
-                GRID=test_grid, SWnet=800.0, dt=3600
-            )
+        with pytest.raises(ValueError, match="".join(error_msg)):
+            pRad.penetrating_radiation(GRID=test_grid, SWnet=800.0, dt=3600)
 
     @pytest.mark.parametrize(
         "arg_density", [250.0, constants.snow_ice_threshold + 1]
@@ -44,9 +39,7 @@ class TestParamRadiation:
         arg_density,
     ):
         conftest_boilerplate.patch_variable(
-            monkeypatch,
-            module_penrad.constants,
-            {"penetrating_method": "Bintanja95"},
+            monkeypatch, pRad, {"penetrating_method": "Bintanja95"}
         )
         test_grid = conftest_mock_grid
         test_grid.add_fresh_snow(0.1, arg_density, 270.15, 0.0)
@@ -56,7 +49,7 @@ class TestParamRadiation:
         else:
             test_si = test_swnet * 0.2
 
-        melt_si = module_penrad.method_Bintanja(
+        melt_si = pRad.method_Bintanja(
             GRID=test_grid, SWnet=test_swnet, dt=constants.dt
         )
         assert isinstance(melt_si, tuple)
@@ -79,7 +72,7 @@ class TestParamRadiation:
     ):
         conftest_boilerplate.patch_variable(
             monkeypatch,
-            module_penrad.constants,
+            pRad.constants,
             {"penetrating_method": "Bintanja95"},
         )
 
@@ -96,7 +89,7 @@ class TestParamRadiation:
         else:
             test_si = test_swnet * 0.2
 
-        melt_si = module_penrad.method_Bintanja_debris(
+        melt_si = pRad.method_Bintanja_debris(
             GRID=test_grid, SWnet=test_swnet, dt=constants.dt
         )
         assert isinstance(melt_si, tuple)
