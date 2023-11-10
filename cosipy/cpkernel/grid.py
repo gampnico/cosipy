@@ -859,7 +859,7 @@ class Grid:
             raise NotImplementedError(error_msg)
 
         # first layer is too small and not debris
-        if (not _check_node_ntype(self, 0, 1)) & (
+        if (not _check_node_is_debris(self, 0)) & (
             self.get_node_height(0) < constants.minimum_snow_layer_height
         ):
             self.remove_node([0])
@@ -957,7 +957,9 @@ class Grid:
                 self.get_node_density(idx) / constants.water_density
             )
             # Remove melt from layer and set new snowheight
-            if melt < SWE:
+            if _check_node_is_debris(self, idx):
+                idx = idx + 1
+            elif melt < SWE:
                 self.set_node_height(
                     idx,
                     (SWE - melt)
@@ -1182,7 +1184,7 @@ class Grid:
         return [
             self.grid[idx].get_layer_height()
             for idx in range(self.number_nodes)
-            if (_check_node_ntype(self, idx, 1))
+            if _check_node_is_debris(self, idx)
         ]
 
     def get_node_height(self, idx: int):
@@ -1517,6 +1519,21 @@ def _check_node_is_ice(self, idx: int) -> bool:
     return (self.get_node_ntype(idx) == 0) & (
         self.get_node_density(idx) >= constants.snow_ice_threshold
     )
+
+
+@njit(cache=False)
+def _check_node_is_debris(self, idx: int) -> bool:
+    """Check if a layer is a debris layer.
+
+    Used by the debris implementation.
+
+    Args:
+        idx: Node index in `grid`.
+
+    Returns:
+        True if layer is debris, otherwise returns False.
+    """
+    return self.get_node_ntype(idx) == 1
 
 
 @njit(cache=False)
