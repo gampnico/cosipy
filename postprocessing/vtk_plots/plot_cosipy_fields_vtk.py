@@ -53,8 +53,10 @@ def get_selection(
     if not mean:
         data = array.sel(time=timestamp, method="nearest")
     else:
-        data = array.sel(time=timestamp, method="nearest").mean(
-            dim="time", skipna=True
+        data = (
+            array.resample(time="1D", skipna=True)
+            .mean()
+            .sel(time=timestamp, method="nearest")
         )
 
     return data
