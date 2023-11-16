@@ -216,7 +216,9 @@ def createDEM_v1(
     polydata = vtk.vtkPolyData()
     polydata.SetPoints(points)
 
+    # Use 2D for large spatial domains, 3D for smaller ones
     delaunay = vtk.vtkDelaunay3D()
+
     delaunay.SetInputData(polydata)
     delaunay.Update()
 
@@ -260,6 +262,19 @@ def createDEM_v2(
     write_unstructured_grid_to_file(grid, "cosipy.vtu")
 
 
+def add_hgt_underlay(
+    data: xr.DataArray, hgt: xr.DataArray, latitude: str, longitude: str
+) -> xr.DataArray:
+    """Replace missing data with elevation mask."""
+
+    hgt_mask = hgt.stack(x=[latitude, longitude])
+    data.values[(~np.isnan(data.values))] = np.nanmax(hgt_mask.values) + 1
+
+    data.values[np.isnan(data.values)] = hgt_mask.values[np.isnan(data.values)]
+
+    return data
+
+
 def add_scalar(
     file_path: str,
     var: str,
@@ -294,9 +309,13 @@ def add_scalar(
 
     ds = xr.open_dataset(file_path)
     ds = get_selection(array=ds, timestamp=timestamp, mean=mean)
-
     latitude, longitude = get_coords(data=ds)
+
     ds_sub = ds[var].stack(x=[latitude, longitude])
+    if var.lower() == "mask":
+        ds_sub = add_hgt_underlay(
+            data=ds_sub, hgt=ds["HGT"], latitude=latitude, longitude=longitude
+        )
     ds_sub = ds_sub.dropna(dim="x")
     lats = ds_sub[latitude].values
     lons = ds_sub[longitude].values
@@ -370,6 +389,70 @@ def set_filename(name: str, timestamp: str, fmt: str = "png") -> str:
     return img_id
 
 
+def get_elevation_colormap(
+    scalar_range: tuple,
+) -> vtk.vtkColorTransferFunction:
+    """Get colour map for elevation data. Based on `gist_earth`.
+
+    Args:
+        scalar_range: Minimum and maxium data values.
+
+    Returns:
+        Elevation colour map.
+    """
+    correct_max = scalar_range[1] - 1
+    dz = correct_max - scalar_range[0]
+    cmap = vtk.vtkColorTransferFunction()
+    rgb = {
+        "snow_white": (253, 251, 251),
+        "eggshell": (247, 242, 223),
+        "wheat": (230, 168, 115),
+        "ochre": (255, 217, 128),
+        "light_beige": (206, 171, 133),
+        "drab_olive": (170, 179, 92),
+        "palm_leaf": (94, 160, 75),
+        "deep_aquamarine": (54, 135, 112),
+        "dark_cerulean": (28, 77, 122),
+        "black": (38, 38, 18),
+    }
+    hsv = {}
+    for key, val in rgb.items():
+        hsv[key] = (i / 256 for i in val)
+    cmap.AddRGBPoint(scalar_range[0] - (0.25 * dz), *hsv["black"])
+    cmap.AddRGBPoint(scalar_range[0], *hsv["palm_leaf"])
+    cmap.AddRGBPoint(correct_max - (0.8 * dz), *hsv["drab_olive"])
+    cmap.AddRGBPoint(correct_max - (0.6 * dz), *hsv["light_beige"])
+    cmap.AddRGBPoint(correct_max - (0.4 * dz), *hsv["ochre"])
+    cmap.AddRGBPoint(correct_max - (0.2 * dz), *hsv["wheat"])
+    cmap.AddRGBPoint(correct_max, *hsv["eggshell"])
+    cmap.AddRGBPoint(correct_max + 1, 1.0, 1.0, 1.0)
+
+    return cmap
+
+
+def set_color_map(
+    lookup_table: vtk.vtkLookupTable,
+    cmap: vtk.vtkColorTransferFunction,
+    contours: int,
+    scalar_range: tuple = (0.0, 1.0),
+):
+    """Apply colour map to lookup table.
+
+    Args:
+        lookup_table: Colour lookup table.
+        cmap: Desired colour map.
+        contours: Number of contours.
+        scalar_range: Minimum and maximum data values.
+    """
+    lookup_table.SetNumberOfColors(contours + 1)
+
+    for i in range(contours + 1):
+        new_colour = cmap.GetColor(
+            (i * (((scalar_range[1] - 1) - scalar_range[0]) / (contours + 1)))
+        )
+        lookup_table.SetTableValue(i, *new_colour)
+
+
 def plotSurface(
     domain: vtk.vtkXMLUnstructuredGridReader,
     variable: str,
@@ -395,12 +478,21 @@ def plotSurface(
     scalar_range = (
         domain.GetOutput().GetPointData().GetArray(variable).GetRange()
     )
-    num_contours = contours
+    num_contours = contours + 1
 
     lut = vtk.vtkLookupTable()
-    lut.SetNumberOfTableValues(num_contours + 1)
-    if variable.lower() == "hgt":
-        lut.SetHueRange(0.75, 0.1)  # blue: low altitude
+    lut.SetNumberOfTableValues(num_contours)
+
+    if variable.lower() in ["hgt", "mask"]:
+        cmap = get_elevation_colormap(scalar_range=scalar_range)
+        set_color_map(
+            lookup_table=lut,
+            cmap=cmap,
+            contours=num_contours,
+            scalar_range=scalar_range,
+        )
+        if variable.lower() == "mask":  # make glacier white!
+            lut.SetTableValue(num_contours, 1.0, 1.0, 1.0)
     else:
         lut.SetHueRange(0.1, 0.75)  # matches cmap in plot_cosipy_profiles
     lut.SetNanColor(1, 1, 1, 0.5)
@@ -414,7 +506,7 @@ def plotSurface(
     cone_mapper.SetScalarModeToUsePointData()
     cone_mapper.ScalarVisibilityOn()
     cone_mapper.SetLookupTable(lut)
-    cone_mapper.SetScalarRange(scalar_range[0], scalar_range[1])
+    cone_mapper.SetScalarRange(scalar_range[0], scalar_range[1] - 1)
     cone_mapper.SetInterpolateScalarsBeforeMapping(1)  # stops colour smudging
     cone_mapper.Update()
 
@@ -542,8 +634,6 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Plot daily mean instead of timestep",
     )
-
-    # Optional switches
     parser.add_argument(
         "-g",
         "--gltf",
