@@ -22,7 +22,7 @@ class TestParamRadiation:
             monkeypatch, pRad, {"penetrating_method": "WrongMethod"}
         )
         error_msg = (
-            f'Penetrating method = "{pRad.penetrating_method}" ',
+            f'Penetrating method = "{pRad.constants.penetrating_method}" ',
             f'is not allowed, must be one of {", ".join(allow_list)}',
         )
         with pytest.raises(ValueError, match="".join(error_msg)):
@@ -39,7 +39,7 @@ class TestParamRadiation:
         arg_density,
     ):
         conftest_boilerplate.patch_variable(
-            monkeypatch, pRad, {"penetrating_method": "Bintanja95"}
+            monkeypatch, pRad.constants, {"penetrating_method": "Bintanja95"}
         )
         test_grid = conftest_mock_grid
         test_grid.add_fresh_snow(0.1, arg_density, 270.15, 0.0)
