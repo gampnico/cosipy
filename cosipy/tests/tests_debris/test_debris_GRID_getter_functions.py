@@ -276,3 +276,49 @@ class TestGridGetter:
         conftest_boilerplate.check_output(
             compare_nlayers, float, sum(test_nlayers)
         )
+
+    @pytest.mark.parametrize("arg_bury", [True, False])
+    def test_get_next_debris_layer(self, grid, conftest_boilerplate, arg_bury):
+        grid.add_fresh_debris(0.2, 2840, 273.15, 0.0)
+        grid.add_fresh_debris(0.2, 2840, 273.15, 0.0)
+        test_idx = 0
+        if arg_bury:
+            grid.add_fresh_snow(0.1, 250, 270.15, 0.0)
+            test_idx += 1
+        assert grid.get_number_debris_layers() == 2
+
+        compare_idx = grid.get_next_debris_layer(0)
+
+        conftest_boilerplate.check_output(compare_idx, int, test_idx)
+
+    @pytest.mark.parametrize("arg_bury", [True, False])
+    def test_get_next_snow_ice_layer(
+        self, grid, conftest_boilerplate, arg_bury
+    ):
+        grid.add_fresh_debris(0.2, 2840, 273.15, 0.0)
+        grid.add_fresh_debris(0.2, 2840, 273.15, 0.0)
+        test_idx = 2
+        if arg_bury:
+            grid.add_fresh_snow(0.1, 250, 270.15, 0.0)
+            test_idx = 0
+        assert grid.get_number_debris_layers() == 2
+
+        compare_idx = grid.get_next_snow_ice_layer(0)
+
+        conftest_boilerplate.check_output(compare_idx, int, test_idx)
+
+    @pytest.mark.parametrize("arg_bury", [True, False])
+    def test_get_debris_ice_interface(
+        self, grid, conftest_boilerplate, arg_bury
+    ):
+        grid.add_fresh_debris(0.2, 2840, 273.15, 0.0)
+        grid.add_fresh_debris(0.2, 2840, 273.15, 0.0)
+        test_idx = grid.get_number_debris_layers()-1
+        if arg_bury:
+            grid.add_fresh_snow(0.1, 250, 270.15, 0.0)
+            test_idx += 1
+        assert grid.get_number_debris_layers() == 2
+
+        compare_idx = grid.get_debris_ice_interface(0)
+
+        conftest_boilerplate.check_output(compare_idx, int, test_idx)

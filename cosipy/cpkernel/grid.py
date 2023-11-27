@@ -1385,6 +1385,44 @@ class Grid:
         """Get the number of layers."""
         return self.number_nodes
 
+    def get_debris_ice_interface(self, idx: int = 0) -> tuple:
+        """Get the debris layer extents.
+        Args:
+            idx: Layer index from which to begin search.
+
+        Returns:
+            tuple[int, int]: Indices for the uppermost debris layer and
+            the uppermost subdebris (snow/ice) layer.
+        """
+        debris_start = self.get_next_debris_layer(idx)
+        debris_end = self.get_next_snow_ice_layer(debris_start) - 1
+        # Forbid glacial retreat
+        # if idx + 1 == self.number_nodes:
+        #     raise ValueError("Glacier has melted!")
+        return debris_start, debris_end
+
+    def get_next_snow_ice_layer(self, idx: int = 0) -> int:
+        """Get next snow/ice layer."""
+        while idx < self.number_nodes:
+            if _check_node_is_debris(self, idx):
+                idx += 1
+            else:
+                break
+        return idx
+
+    def get_next_debris_layer(self, idx: int = 0) -> int:
+        """Get next debris layer.
+
+        TODO: Handle column with no debris.
+        """
+        while idx < self.number_nodes:
+            if not _check_node_is_debris(self, idx):
+                idx += 1
+            else:
+                break
+        return idx
+
+
     def info(self):
         """Print some information on grid."""
 
