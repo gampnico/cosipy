@@ -1203,10 +1203,7 @@ class Grid:
 
     def get_ntype(self) -> list:
         """Get the layer node types."""
-        return [
-            self.grid[idx].get_layer_ntype()
-            for idx in range(self.number_nodes)
-        ]
+        return [self.get_node_ntype(idx) for idx in range(self.number_nodes)]
 
     def get_debris_heights(self) -> list:
         """Get the heights of the debris layers."""
@@ -1385,7 +1382,7 @@ class Grid:
         """Get the number of layers."""
         return self.number_nodes
 
-    def get_debris_ice_interface(self, idx: int = 0) -> tuple:
+    def get_debris_extents(self, idx: int = 0) -> tuple:
         """Get the debris layer extents.
         Args:
             idx: Layer index from which to begin search.
@@ -1422,6 +1419,15 @@ class Grid:
                 break
         return idx
 
+    # def _get_next_snow_layer(self, grid_obj, idx: int = 0) -> int:
+    #     ntypes = self.get_ntype()
+    #     snow_idx = [
+    #         (idx, ntype)
+    #         for idx, ntype in enumerate(ntypes[idx:])
+    #         if ntype == 0
+    #     ]
+    #     # snow_idx = next((idx_ntype for idx_ntype in ntypes[idx:] if idx_ntype == 0))
+    #     return snow_idx
 
     def info(self):
         """Print some information on grid."""

@@ -308,17 +308,15 @@ class TestGridGetter:
         conftest_boilerplate.check_output(compare_idx, int, test_idx)
 
     @pytest.mark.parametrize("arg_bury", [True, False])
-    def test_get_debris_ice_interface(
-        self, grid, conftest_boilerplate, arg_bury
-    ):
+    def test_get_debris_extents(self, grid, conftest_boilerplate, arg_bury):
         grid.add_fresh_debris(0.2, 2840, 273.15, 0.0)
         grid.add_fresh_debris(0.2, 2840, 273.15, 0.0)
-        test_idx = grid.get_number_debris_layers()-1
+        test_idx = (0, grid.get_number_debris_layers() - 1)
         if arg_bury:
             grid.add_fresh_snow(0.1, 250, 270.15, 0.0)
-            test_idx += 1
+            test_idx = tuple(idx + 1 for idx in test_idx)
         assert grid.get_number_debris_layers() == 2
 
-        compare_idx = grid.get_debris_ice_interface(0)
+        compare_idx = grid.get_debris_extents(0)
 
-        conftest_boilerplate.check_output(compare_idx, int, test_idx)
+        conftest_boilerplate.check_output(compare_idx, tuple, test_idx)
