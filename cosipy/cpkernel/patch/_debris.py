@@ -7,6 +7,8 @@ To add a new method:
 2. Go to `cpkernel.patch._ctors` and follow the instructions there.
 3. Go to `cpkernel.patch.proxies` and follow the instructions there.
 """
+import math
+
 from numba import float64, int64, njit
 
 import constants
@@ -222,3 +224,18 @@ def DebrisNode_get_layer_thermal_diffusivity(self) -> float64:
             * DebrisNode_get_layer_specific_heat(self)
         )
     return k
+
+
+@njit(cache=False)
+def DebrisNode_get_layer_thermal_effusivity(self) -> float64:
+    """Get the node's thermal effusivity.
+
+    Returns:
+        Thermal effusivity [:math:`W~s^{0.5}~m^{-2}~K`].
+    """
+    e = math.sqrt(
+        DebrisNode_get_layer_thermal_conductivity(self)
+        * DebrisNode_get_layer_density(self)
+        * DebrisNode_get_layer_specific_heat(self)
+    )
+    return e

@@ -1305,6 +1305,23 @@ class Grid:
             for idx in range(self.number_nodes)
         ]
 
+    def get_node_thermal_effusivity(self, idx: int) -> float:
+        """Get a node's thermal effusivity.
+
+        Only implemented for debris.
+        """
+        return self.grid[idx].get_layer_thermal_effusivity()
+
+    def get_thermal_effusivity(self) -> list:
+        """Get the thermal effusivity profile.
+
+        Only implemented for debris.
+        """
+        return [
+            self.grid[idx].get_layer_thermal_effusivity()
+            for idx in range(self.number_nodes)
+        ]
+
     def get_node_refreeze(self, idx: int):
         """Get the amount of refrozen water in a node."""
         return self.grid[idx].get_layer_refreeze()

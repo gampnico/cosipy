@@ -218,6 +218,14 @@ def ol_get_layer_thermal_diffusivity(self) -> float64:
     return impl
 
 
+@overload_method(NodeTypeRef, "get_layer_thermal_effusivity")
+def ol_get_layer_thermal_effusivity(self) -> float64:
+    def impl(self):
+        return cpk_node.Node_get_layer_thermal_effusivity(self)
+
+    return impl
+
+
 """OVERLOAD DEBRIS NODE"""
 
 """Overload get/set methods for `DebrisNode` attributes."""
@@ -374,6 +382,14 @@ def ol_get_layer_thermal_conductivity(self) -> float64:
 def ol_get_layer_thermal_diffusivity(self) -> float64:
     def impl(self):
         return cpk_debris.DebrisNode_get_layer_thermal_diffusivity(self)
+
+    return impl
+
+
+@overload_method(DebrisNodeTypeRef, "get_layer_thermal_effusivity")
+def ol_get_layer_thermal_effusivity(self) -> float64:
+    def impl(self):
+        return cpk_debris.DebrisNode_get_layer_thermal_effusivity(self)
 
     return impl
 
@@ -591,6 +607,19 @@ def ol_get_layer_thermal_diffusivity(self) -> float64:
             x = cpk_debris.DebrisNode_get_layer_thermal_diffusivity(self)
         else:
             x = cpk_node.Node_get_layer_thermal_diffusivity(self)
+        return x
+
+    return impl
+
+
+@overload_method(BaseNodeTypeRef, "get_layer_thermal_effusivity")
+def ol_get_layer_thermal_effusivity(self) -> float64:
+    # verify_node_type(self, BaseNodeTypeRef)
+    def impl(self):
+        if self.ntype == 1:
+            x = cpk_debris.DebrisNode_get_layer_thermal_effusivity(self)
+        else:
+            x = cpk_node.Node_get_layer_thermal_effusivity(self)
         return x
 
     return impl

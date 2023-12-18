@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 import config
@@ -270,6 +272,29 @@ class TestPatch_debrisGet:
             float,
             test_thermal_diffusivity,
         )
+
+    def test_node_get_layer_thermal_effusivity(
+        self, node, conftest_boilerplate
+    ):
+        effusivity_product = math.sqrt(
+            _debris.DebrisNode.DebrisNode_get_layer_thermal_conductivity(node)
+            * _debris.DebrisNode.DebrisNode_get_layer_density(node)
+            * _debris.DebrisNode.DebrisNode_get_layer_specific_heat(node)
+        )
+        effusivity_ratio = (
+            _debris.DebrisNode.DebrisNode_get_layer_thermal_conductivity(node)
+            / math.sqrt(
+                _debris.DebrisNode.DebrisNode_get_layer_thermal_diffusivity(
+                    node
+                )
+            )
+        )
+        for test_effusivity in (effusivity_product, effusivity_ratio):
+            conftest_boilerplate.check_output(
+                _debris.DebrisNode_get_layer_thermal_effusivity(node),
+                float,
+                test_effusivity,
+            )
 
     def test_node_check_thermal_relationship(self, node, conftest_boilerplate):
         """Check thermal relationship.

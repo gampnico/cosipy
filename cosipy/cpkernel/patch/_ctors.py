@@ -259,6 +259,10 @@ class BaseNode(structref.StructRefProxy):
     def get_layer_thermal_diffusivity(self) -> float64:
         return self.get_layer_thermal_diffusivity()
 
+    @njit(cache=False)
+    def get_layer_thermal_effusivity(self) -> float64:
+        return self.get_layer_thermal_effusivity()
+
 
 # register types and bind the proxy
 structref.define_proxy(
@@ -524,6 +528,15 @@ class Node(BaseNode):
             Thermal diffusivity [:math:`m^{2}~s^{-1}`].
         """
         return cpk_node.Node_get_layer_thermal_diffusivity(self)
+
+    @njit(cache=False)
+    def get_layer_thermal_effusivity(self) -> float64:
+        """Get the node's thermal effusivity.
+
+        Returns:
+            Thermal effusivity [:math:`W~s^{0.5}~m^{-2}~K`].
+        """
+        return cpk_node.Node_get_layer_thermal_effusivity(self)
 
     """SETTER FUNCTIONS"""
 
@@ -844,6 +857,15 @@ class DebrisNode(BaseNode):
             Thermal diffusivity [:math:`m^{2}~s^{-1}`].
         """
         return cpk_debris.DebrisNode_get_layer_thermal_diffusivity(self)
+
+    @njit(cache=False)
+    def get_layer_thermal_effusivity(self) -> float64:
+        """Get the node's thermal effusivity.
+
+        Returns:
+            Thermal effusivity [:math:`W~s^{0.5}~m^{-2}~K`]..
+        """
+        return cpk_debris.DebrisNode_get_layer_thermal_effusivity(self)
 
     """SETTER FUNCTIONS"""
 

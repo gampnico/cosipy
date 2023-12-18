@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 import config
@@ -235,6 +237,24 @@ class TestPatch_nodeGet:
             float,
             test_thermal_diffusivity,
         )
+
+    def test_node_get_layer_thermal_effusivity(
+        self, node, conftest_boilerplate
+    ):
+        effusivity_product = math.sqrt(
+            _node.Node_get_layer_thermal_conductivity(node)
+            * _node.Node_get_layer_density(node)
+            * _node.Node_get_layer_specific_heat(node)
+        )
+        effusivity_ratio = _node.Node_get_layer_thermal_conductivity(
+            node
+        ) / math.sqrt(_node.Node_get_layer_thermal_diffusivity(node))
+        for test_effusivity in (effusivity_product, effusivity_ratio):
+            conftest_boilerplate.check_output(
+                _node.Node_get_layer_thermal_effusivity(node),
+                float,
+                test_effusivity,
+            )
 
     @pytest.mark.parametrize("arg_ice_fraction", [0.1, 0.9])
     def test_node_get_layer_irreducible_water_content(

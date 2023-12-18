@@ -11,7 +11,8 @@ To add a new method:
 4. Go to `cpkernel.patch.proxies` and follow the instructions there.
 """
 
-import numpy as np
+import math
+
 from numba import float64, int64, njit, optional
 
 import constants
@@ -183,7 +184,7 @@ def Node_get_layer_thermal_conductivity(self) -> float64:
             + self.liquid_water_content * constants.k_w
         )
     elif constants.thermal_conductivity_method == "empirical":
-        lam = 0.021 + 2.5 * np.power((Node_get_layer_density(self) / 1000), 2)
+        lam = 0.021 + 2.5 * math.pow((Node_get_layer_density(self) / 1000), 2)
     else:
         message = (
             "Thermal conductivity method =",
@@ -206,3 +207,18 @@ def Node_get_layer_thermal_diffusivity(self) -> float64:
         Node_get_layer_density(self) * Node_get_layer_specific_heat(self)
     )
     return k
+
+
+@njit(cache=False)
+def Node_get_layer_thermal_effusivity(self) -> float64:
+    """Get the node's thermal effusivity.
+
+    Returns:
+        Thermal effusivity [:math:`W~s^{0.5}~m^{-2}~K`].
+    """
+    e = math.sqrt(
+        Node_get_layer_thermal_diffusivity(self)
+        * Node_get_layer_density(self)
+        * Node_get_layer_specific_heat(self)
+    )
+    return e
