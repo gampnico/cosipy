@@ -5,6 +5,7 @@ from numba import njit
 from scipy.optimize import OptimizeResult, minimize, newton
 
 import constants
+from config import use_debris
 
 
 def get_minimisation_bounds(grid) -> tuple:
@@ -17,9 +18,25 @@ def get_minimisation_bounds(grid) -> tuple:
         tuple[float, float]: Lower and upper minimisation bounds.
     """
     lower = 220.0
-    upper = constants.zero_temperature
+    if grid.get_node_ntype(0) != 0:
+        upper = constants.debris_max_temperature
+    else:
+        upper = constants.zero_temperature
 
     return lower, upper
+
+
+# fmt: off
+def pack_minimisation_arguments(
+    GRID, dt: int, z: float, z0: float, T2: float, rH2: float,
+    p: float, SWnet: float, u2: float, RAIN: float, SLOPE: float,
+    B_Ts: np.ndarray, LWin: float, N: float,
+) -> dict:  # fmt: on
+    """Pack variables used for minimisation arguments into a dictionary.
+
+    Dict lookups are faster than for tuples [O(1) vs. O(n)].
+    """
+    return locals()
 
 
 # fmt: off
@@ -118,7 +135,10 @@ def update_surface_temperature(
 
     # Set minimisation bounds
     lower_bnd_ts, upper_bnd_ts = get_minimisation_bounds(GRID)
-    optimisation_function = eb_optim
+    if use_debris:
+        optimisation_function = eb_optim_debris
+    else:
+        optimisation_function = eb_optim
 
     # Update surface temperature
     # fmt: off
@@ -220,6 +240,19 @@ def interp_subT(GRID) -> np.ndarray:
 
     t_z1 = get_subsurface_temperature(GRID, layer_heights_cum, constants.zlt1)
     t_z2 = get_subsurface_temperature(GRID, layer_heights_cum, constants.zlt2)
+
+    return np.array([t_z1, t_z2])
+
+
+@njit
+def interp_subT_debris(GRID) -> np.ndarray:
+    """Get debris temperatures at its layer extents."""
+    layer_heights_cum = np.cumsum(np.array(GRID.get_height()))
+    bottom_debris_idx, top_ice_idx = GRID.get_debris_extents()
+    t_z1 = get_subsurface_temperature(
+        GRID, layer_heights_cum, bottom_debris_idx
+    )
+    t_z2 = get_subsurface_temperature(GRID, layer_heights_cum, top_ice_idx)
 
     return np.array([t_z1, t_z2])
 
@@ -579,4 +612,24 @@ def eb_optim(
         return SWnet + Li + Lo + H + L + B + Qrr
     else:
         return np.abs(SWnet + Li + Lo + H + L + B + Qrr)
+
+
+@njit
+def eb_optim_debris(
+    T0: float, GRID, dt: int, z: float, z0: float, T2: float, rH2: float,
+    p: float, SWnet: float, u2: float, RAIN: float, SLOPE: float, B_Ts: float,
+    LWin: float = None, N: float = None,
+) -> float:
+    """Optimization function to solve for surface temperature T0."""
+
+    # Get surface fluxes for surface temperature T0
+    (Li, Lo, H, L, B, Qrr, _, _, _, _, _, _, _) = eb_fluxes(
+        GRID, T0, dt, z, z0, T2, rH2, p, u2, RAIN, SLOPE, B_Ts, LWin, N
+    )
+
+    # Return the residual (is minimized by the optimization function)
+    if constants.sfc_temperature_method == "Newton":
+        return SWnet + T0 * ((Li + Lo) + H + L + B + Qrr)
+    else:
+        return np.abs(SWnet + T0 * ((Li + Lo) + H + L + B + Qrr))
 # fmt: on
