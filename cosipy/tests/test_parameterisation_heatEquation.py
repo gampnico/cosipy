@@ -20,9 +20,9 @@ class TestParamHeatEquation:
         test_lower = np.arange(2, test_layers)
         test_upper = np.arange(0, test_layers - 2)
         if not arg_range:  # test other iterables
-            test_centre = [*test_centre]
-            test_lower = [*test_lower]
-            test_upper = [*test_upper]
+            test_centre = np.array([*test_centre])
+            test_lower = np.array([*test_lower])
+            test_upper = np.array([*test_upper])
 
         compare_temperatures = module_heatEquation.get_new_temperatures_cds2(
             grid=test_grid,
@@ -34,3 +34,13 @@ class TestParamHeatEquation:
 
         assert isinstance(compare_temperatures, np.ndarray)
         assert not np.array_equal(compare_temperatures, test_temperatures)
+
+    def test_solveHeatEquation(self, conftest_mock_grid):
+        test_grid = conftest_mock_grid
+        test_temperature = test_grid.get_temperature()
+
+        module_heatEquation.solveHeatEquation(GRID=test_grid, dt=1)
+
+        compare_temperature = test_grid.get_temperature()
+
+        assert not np.array_equal(compare_temperature, test_temperature)
