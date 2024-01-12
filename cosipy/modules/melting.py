@@ -62,7 +62,6 @@ def get_surface_melt_energy_sum(
     """Get surface melt energy.
 
     Args:
-        grid (Grid): Glacier data mesh.
         sw_net: Net shortwave radiation.
         lw_in: Incoming longwave radiation.
         lw_out: Outgoing longwave radiation.

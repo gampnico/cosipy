@@ -97,6 +97,9 @@ def cosipy_core(DATA, indY, indX, GRID_RESTART=None, stake_names=None, stake_dat
     #--------------------------------------------
     if GRID_RESTART is None:
         GRID = init_snowpack(DATA)
+        if use_debris:
+            print("\nAdding debris layer to surface...\n")
+            init_debris_pack(grid=GRID)
     else:
         GRID = load_snowpack(GRID_RESTART)
 
@@ -259,29 +262,47 @@ def cosipy_core(DATA, indY, indX, GRID_RESTART=None, stake_names=None, stake_dat
         #--------------------------------------------
         # Surface mass fluxes [m w.e.q.]
         #--------------------------------------------
-        if surface_temperature < zero_temperature:
-            sublimation = min(latent_heat_flux / (water_density * lat_heat_sublimation), 0) * dt
-            deposition = max(latent_heat_flux / (water_density * lat_heat_sublimation), 0) * dt
+        if surface_temperature < cn.zero_temperature:
+            sublimation = min(latent_heat_flux / (cn.water_density * cn.lat_heat_sublimation), 0) * dt
+            deposition = max(latent_heat_flux / (cn.water_density * cn.lat_heat_sublimation), 0) * dt
             evaporation = 0
             condensation = 0
         else:
             sublimation = 0
             deposition = 0
-            evaporation = min(latent_heat_flux / (water_density * lat_heat_vaporize), 0) * dt
-            condensation = max(latent_heat_flux / (water_density * lat_heat_vaporize), 0) * dt
+            evaporation = min(latent_heat_flux / (cn.water_density * cn.lat_heat_vaporize), 0) * dt
+            condensation = max(latent_heat_flux / (cn.water_density * cn.lat_heat_vaporize), 0) * dt
 
         #--------------------------------------------
         # Melt process - mass changes of snowpack (melting, sublimation, deposition, evaporation, condensation)
         #--------------------------------------------
         # Melt energy in [W m^-2 or J s^-1 m^-2]
-        melt_energy = max(0, sw_radiation_net + lw_radiation_in + lw_radiation_out + ground_heat_flux + rain_heat_flux +
-                          sensible_heat_flux + latent_heat_flux)
+        # melt_energy = max(0, sw_radiation_net + lw_radiation_in + lw_radiation_out + ground_heat_flux + rain_heat_flux + sensible_heat_flux + latent_heat_flux)
 
         # Convert melt energy to m w.e.q.
-        melt = melt_energy * dt / (1000 * lat_heat_melting)
+        # melt = melt_energy * dt / (1000 * cn.lat_heat_melting)
+
+        melt_energy, melt = surface_melting(
+            grid=GRID,
+            sw_net=sw_radiation_net,
+            lw_in=lw_radiation_in,
+            lw_out=lw_radiation_out,
+            ghf=ground_heat_flux,
+            rhf=rain_heat_flux,
+            shf=sensible_heat_flux,
+            lhf=latent_heat_flux,
+            dt=dt,
+        )
 
         # Remove melt [m w.e.q.]
-        lwc_from_melted_layers = GRID.remove_melt_weq(melt - sublimation - deposition)
+        if use_debris:
+            lwc_from_melted_layers = GRID.remove_melt_weq_debris(
+                melt - sublimation - deposition
+            )
+        else:
+            lwc_from_melted_layers = GRID.remove_melt_weq(
+                melt - sublimation - deposition
+            )
 
         #--------------------------------------------
         # Percolation
@@ -334,7 +355,10 @@ def cosipy_core(DATA, indY, indX, GRID_RESTART=None, stake_names=None, stake_dat
         _MB[t] = mass_balance
         _surfMB[t] = surface_mass_balance
         _Q[t] = Q
-        _SNOWHEIGHT[t] = GRID.get_total_snowheight()
+        if use_debris:
+            _SNOWHEIGHT[t] = GRID.get_supraglacial_snow()
+        else:
+            _SNOWHEIGHT[t] = GRID.get_total_snowheight()
         _TOTALHEIGHT[t] = GRID.get_total_height()
         _TS[t] = surface_temperature
         _ALBEDO[t] = alpha
