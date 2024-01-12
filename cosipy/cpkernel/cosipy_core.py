@@ -5,8 +5,10 @@ from constants import mult_factor_RRR, densification_method, ice_density, water_
                       minimum_snowfall, zero_temperature, lat_heat_sublimation, \
                       lat_heat_melting, lat_heat_vaporize, center_snow_transfer_function, \
                       spread_snow_transfer_function, constant_density
-from config import force_use_TP, force_use_N, stake_evaluation, full_field, WRF_X_CSPY 
+from config import force_use_TP, force_use_N, stake_evaluation, full_field, WRF_X_CSPY, use_debris
 
+from cosipy.cpkernel.init import init_snowpack, load_snowpack, init_debris_pack
+from cosipy.cpkernel.io import IOClass
 from cosipy.modules.albedo import updateAlbedo
 from cosipy.modules.heatEquation import solveHeatEquation
 from cosipy.modules.penetratingRadiation import penetrating_radiation
@@ -15,10 +17,8 @@ from cosipy.modules.refreezing import refreezing
 from cosipy.modules.roughness import updateRoughness
 from cosipy.modules.densification import densification
 from cosipy.modules.evaluation import evaluate
+from cosipy.modules.melting import surface_melting
 from cosipy.modules.surfaceTemperature import update_surface_temperature
-
-from cosipy.cpkernel.init import init_snowpack, load_snowpack
-from cosipy.cpkernel.io import IOClass
 
 
 def cosipy_core(DATA, indY, indX, GRID_RESTART=None, stake_names=None, stake_data=None):
