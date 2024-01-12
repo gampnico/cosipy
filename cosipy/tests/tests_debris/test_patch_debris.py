@@ -2,14 +2,13 @@ import math
 
 import pytest
 
-import config
 import constants
 import cosipy.cpkernel.node
 import cosipy.cpkernel.patch._debris as _debris
 from cosipy.cpkernel.patch._ctors import DebrisNode
 
 
-class TestPatch_debrisGet:
+class TestPatchDebrisGet:
     """Tests get methods for `DebrisNode`.
 
     Attributes:
@@ -233,8 +232,8 @@ class TestPatch_debrisGet:
         monkeypatch,
         node,
         conftest_boilerplate,
-        arg_structure,
-        arg_temperature,
+        arg_structure: tuple,
+        arg_temperature: float,
     ):
         patches = {"debris_structure": arg_structure[0]}
         conftest_boilerplate.patch_variable(
@@ -277,18 +276,13 @@ class TestPatch_debrisGet:
         self, node, conftest_boilerplate
     ):
         effusivity_product = math.sqrt(
-            _debris.DebrisNode.DebrisNode_get_layer_thermal_conductivity(node)
-            * _debris.DebrisNode.DebrisNode_get_layer_density(node)
-            * _debris.DebrisNode.DebrisNode_get_layer_specific_heat(node)
+            _debris.DebrisNode_get_layer_thermal_conductivity(node)
+            * _debris.DebrisNode_get_layer_density(node)
+            * _debris.DebrisNode_get_layer_specific_heat(node)
         )
-        effusivity_ratio = (
-            _debris.DebrisNode.DebrisNode_get_layer_thermal_conductivity(node)
-            / math.sqrt(
-                _debris.DebrisNode.DebrisNode_get_layer_thermal_diffusivity(
-                    node
-                )
-            )
-        )
+        effusivity_ratio = _debris.DebrisNode_get_layer_thermal_conductivity(
+            node
+        ) / math.sqrt(_debris.DebrisNode_get_layer_thermal_diffusivity(node))
         for test_effusivity in (effusivity_product, effusivity_ratio):
             conftest_boilerplate.check_output(
                 _debris.DebrisNode_get_layer_thermal_effusivity(node),

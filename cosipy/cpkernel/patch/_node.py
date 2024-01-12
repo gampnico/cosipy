@@ -217,7 +217,7 @@ def Node_get_layer_thermal_effusivity(self) -> float64:
         Thermal effusivity [:math:`W~s^{0.5}~m^{-2}~K`].
     """
     e = math.sqrt(
-        Node_get_layer_thermal_diffusivity(self)
+        Node_get_layer_thermal_conductivity(self)
         * Node_get_layer_density(self)
         * Node_get_layer_specific_heat(self)
     )
