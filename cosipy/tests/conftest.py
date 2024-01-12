@@ -135,6 +135,16 @@ def fixture_conftest_mock_grid(conftest_mock_grid_values: dict) -> Grid:
     yield grid_object
 
 
+@pytest.fixture(name="grid", autouse=False, scope="function")
+def fixture_grid(conftest_mock_grid) -> Grid:
+    """Alias for `conftest_mock_grid`."""
+
+    grid_object = conftest_mock_grid
+    assert isinstance(grid_object, Grid)
+
+    yield grid_object
+
+
 @pytest.fixture(name="conftest_mock_grid_ice", scope="function", autouse=False)
 def fixture_conftest_mock_grid_ice(conftest_mock_grid_values: dict) -> Grid:
     """Constructs a Grid object for ice layers.
@@ -524,6 +534,80 @@ class TestBoilerplate:
         monkeypatch = pytest.MonkeyPatch()
         monkeypatch.setattr(config, "use_debris", flag)
 
+    def get_hydrostatic_pressure(
+        self, grid_obj, idx: int = 0, single: bool = False
+    ) -> float:
+        """Get hydrostatic pressure for two contiguous layers.
+
+        Args:
+            grid_obj (Grid): Grid data instance.
+            idx: Layer index. Default 0.
+            single: Only calculate pressure for a single layer.
+                Default `False`.
+
+        Returns:
+            Hydrostatic pressure.
+        """
+
+        w0 = grid_obj.get_node_height(idx) * grid_obj.get_node_density(idx)
+        if not single:
+            w0 += grid_obj.get_node_height(
+                idx + 1
+            ) * grid_obj.get_node_density(idx + 1)
+
+        return 9.81 * w0
+
+    def test_get_hydrostatic_pressure(self):
+        data = {}
+        data["layer_heights"] = numba.float64([0.1, 0.2, 0.5])
+        data["layer_densities"] = numba.float64([250, 250, 917])
+        data["layer_temperatures"] = numba.float64([260, 270, 272])
+        data["layer_liquid_water_content"] = numba.float64([0.0, 0.0, 0.0])
+
+        assert isinstance(data, dict)
+        for array in data.values():
+            assert isinstance(array, np.ndarray)
+            assert len(array) == 3
+
+        grid = Grid(
+            layer_heights=data["layer_heights"],
+            layer_densities=data["layer_densities"],
+            layer_temperatures=data["layer_temperatures"],
+            layer_liquid_water_content=data["layer_liquid_water_content"],
+        )
+
+        test_w0 = grid.get_node_height(0) * grid.get_node_density(0)
+
+        for arg_single in [True, False]:
+            if not arg_single:
+                test_w0 += grid.get_node_height(1) * grid.get_node_density(1)
+            compare_w0 = self.get_hydrostatic_pressure(
+                grid_obj=grid, idx=0, single=arg_single
+            )
+            assert isinstance(compare_w0, float)
+            assert np.isclose(compare_w0, 9.81 * test_w0)
+
+    def calculate_irreducible_water_content(
+        self, current_ice_fraction: float
+    ) -> float:
+        """Calculate irreducible water content."""
+        if current_ice_fraction <= 0.23:
+            theta_e = 0.0264 + 0.0099 * (
+                (1 - current_ice_fraction) / current_ice_fraction
+            )
+        elif (current_ice_fraction > 0.23) & (current_ice_fraction <= 0.812):
+            theta_e = 0.08 - 0.1023 * (current_ice_fraction - 0.03)
+        else:
+            theta_e = 0.0
+
+        return theta_e
+
+    def test_calculate_irreducible_water_content(self):
+        ice_fractions = [0.2, 0.5, 0.9]
+        for i in ice_fractions:
+            theta_e = self.calculate_irreducible_water_content(i)
+            assert isinstance(theta_e, float)
+
     def test_boilerplate_integration(self):
         """Integration test for boilerplate methods."""
 
@@ -532,6 +616,8 @@ class TestBoilerplate:
         self.test_set_rng_seed()
         self.test_check_output()
         self.test_assert_grid_profiles_equal()
+        self.test_get_hydrostatic_pressure()
+        self.test_calculate_irreducible_water_content()
 
 
 @pytest.fixture(name="conftest_boilerplate", scope="function", autouse=False)

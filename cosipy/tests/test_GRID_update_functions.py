@@ -176,56 +176,20 @@ class TestGridInteractions:
 class TestGridRemeshing:
     """Tests if layers can remesh and merge."""
 
-    def get_hydrostatic_pressure(
-        self, grid_obj, idx: int = 0, single: bool = False
-    ) -> float:
-        """Get hydrostatic pressure for two contiguous layers.
-
-        Args:
-            grid_obj (Grid): Grid data instance.
-            idx: Layer index. Default 0.
-            single: Only calculate pressure for a single layer.
-                Default `False`.
-
-        Returns:
-            Hydrostatic pressure.
-        """
-
-        w0 = grid_obj.get_node_height(idx) * grid_obj.get_node_density(idx)
-        if not single:
-            w0 += grid_obj.get_node_height(
-                idx + 1
-            ) * grid_obj.get_node_density(idx + 1)
-
-        return 9.81 * w0
-
-    @pytest.mark.parametrize("arg_single", [True, False])
-    def test_get_hydrostatic_pressure(
-        self, conftest_mock_grid, conftest_boilerplate, arg_single
-    ):
-        test_grid = conftest_mock_grid
-        test_w0 = test_grid.get_node_height(0) * test_grid.get_node_density(0)
-        if not arg_single:
-            test_w0 += test_grid.get_node_height(
-                1
-            ) * test_grid.get_node_density(1)
-        compare_w0 = self.get_hydrostatic_pressure(
-            grid_obj=test_grid, idx=0, single=arg_single
-        )
-        conftest_boilerplate.check_output(compare_w0, float, 9.81 * test_w0)
-
     def test_merge_nodes(self, conftest_mock_grid, conftest_boilerplate):
         test_grid = conftest_mock_grid
         test_nodes = test_grid.number_nodes
 
         # snow-snow
         idx = 0
-        test_w0 = self.get_hydrostatic_pressure(test_grid, idx)
+        test_w0 = conftest_boilerplate.get_hydrostatic_pressure(test_grid, idx)
         test_height = sum(test_grid.get_height()[idx : idx + 2])
 
         test_grid.merge_nodes(idx)
 
-        compare_w0 = self.get_hydrostatic_pressure(test_grid, idx, single=True)
+        compare_w0 = conftest_boilerplate.get_hydrostatic_pressure(
+            test_grid, idx, single=True
+        )
         conftest_boilerplate.check_output(compare_w0, float, test_w0)
         conftest_boilerplate.check_output(
             test_grid.get_node_height(idx), float, test_height
@@ -233,12 +197,14 @@ class TestGridRemeshing:
 
         # glacier-glacier
         idx = test_grid.number_nodes - 2  # last two layers are ice
-        test_w0 = self.get_hydrostatic_pressure(test_grid, idx)
+        test_w0 = conftest_boilerplate.get_hydrostatic_pressure(test_grid, idx)
         test_height = sum(test_grid.get_height()[idx:])
 
         test_grid.merge_nodes(idx)
 
-        compare_w0 = self.get_hydrostatic_pressure(test_grid, idx, single=True)
+        compare_w0 = conftest_boilerplate.get_hydrostatic_pressure(
+            test_grid, idx, single=True
+        )
         conftest_boilerplate.check_output(compare_w0, float, test_w0)
         conftest_boilerplate.check_output(
             test_grid.get_node_height(idx), float, test_height

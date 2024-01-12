@@ -178,8 +178,7 @@ class TestDebrisNodeGet:
     def test_node_get_layer_specific_heat(self, node, conftest_boilerplate):
         test_specific_heat = (
             node.get_layer_air_porosity() * constants.spec_heat_air
-            + (1 - node.get_layer_air_porosity())
-            * (constants.spec_heat_debris)
+            + (1 - node.get_layer_air_porosity()) * constants.spec_heat_debris
         )
 
         conftest_boilerplate.check_output(
@@ -202,7 +201,11 @@ class TestDebrisNodeGet:
     )
     @pytest.mark.parametrize("arg_temperature", [270.0])
     def test_node_get_layer_thermal_conductivity(
-        self, monkeypatch, conftest_boilerplate, arg_structure, arg_temperature
+        self,
+        monkeypatch,
+        conftest_boilerplate,
+        arg_structure: tuple,
+        arg_temperature: float,
     ):
         patches = {"debris_structure": arg_structure[0]}
         conftest_boilerplate.patch_variable(

@@ -3,7 +3,7 @@ import pytest
 
 # import constants
 import cosipy.cpkernel.grid as cpgrid
-from cosipy.modules.percolation import percolation
+import cosipy.modules.percolation as module_percolation
 
 
 class TestParamPercolation:
@@ -175,6 +175,54 @@ class TestParamPercolation:
 
     # def test_percolation_percolate_single_layer(self,conftest_mock_grid):
 
+    def test_get_runoff(self, conftest_boilerplate, conftest_mock_grid):
+        test_grid = conftest_mock_grid
+        test_idx = test_grid.number_nodes - 1
+        test_grid.set_node_liquid_water_content(test_idx, 0.8)
+
+        compare_runoff = module_percolation.get_runoff(test_grid)
+        assert test_grid.get_node_liquid_water_content(test_idx) == 0
+        assert conftest_boilerplate.check_output(
+            compare_runoff, float, 0.8 * test_grid.get_node_height(test_idx)
+        )
+
+    @pytest.mark.parametrize("arg_melt", [0.5])
+    def test_percolate_column(
+        self, conftest_boilerplate, conftest_mock_grid, arg_melt
+    ):
+        test_grid = conftest_mock_grid
+        test_grid.add_fresh_debris(0.1, 2840.0, 273.18, 0.0)
+
+        assert (
+            np.nansum(test_grid.get_liquid_water_content())
+            / test_grid.get_node_height(0)
+            == 0.0
+        )
+
+        test_grid.set_node_liquid_water_content(
+            0,
+            test_grid.get_node_liquid_water_content(0)
+            + float(arg_melt / test_grid.get_node_height(0)),
+        )
+        test_lwc = np.nansum(test_grid.get_liquid_water_content()) + (
+            arg_melt / test_grid.get_node_height(0)
+        )
+
+        test_residual = module_percolation.percolate_column_debris(test_grid)
+
+        compare_lwc = np.nansum(test_grid.get_liquid_water_content()) + (
+            arg_melt / test_grid.get_node_height(0)
+        )
+        conftest_boilerplate.check_output(test_grid.get_node_liquid_water_content(0), float, 0.0)
+        # conftest_boilerplate.check_output(test_residual, float, 0.0)
+        conftest_boilerplate.check_output(
+            compare_lwc,
+            float,
+            test_lwc
+            - test_residual
+            # * test_grid.get_node_height(test_grid.number_nodes - 1),
+        )
+
     @pytest.mark.parametrize("arg_melt", [0.0, 0.5, 1.0])
     @pytest.mark.parametrize("arg_lwc", [0.0, 0.1, 0.5])
     def test_percolation(self, capsys, conftest_mock_grid, arg_lwc, arg_melt):
@@ -187,7 +235,7 @@ class TestParamPercolation:
             GRID.get_liquid_water_content()
         ) + arg_melt / GRID.get_node_height(0)
 
-        runoff = percolation(GRID, arg_melt, self.timedelta)
+        runoff = module_percolation.percolation(GRID, arg_melt, self.timedelta)
         captured = capsys.readouterr()  # numba doesn't support warnings
         final_lwc = np.nansum(GRID.get_liquid_water_content())
         final_mwe = runoff + final_lwc
@@ -252,8 +300,12 @@ class TestParamPercolation:
         )
         conftest_boilerplate.check_output(test_lwc_deb, float, test_lwc_sno)
 
-        runoff_sno = percolation(grid_sno, arg_melt, self.timedelta)
-        runoff_deb = percolation(grid_deb, arg_melt, self.timedelta)
+        runoff_sno = module_percolation.percolation(
+            grid_sno, arg_melt, self.timedelta
+        )
+        runoff_deb = module_percolation.percolation(
+            grid_deb, arg_melt, self.timedelta
+        )
         final_lwc_sno = (
             np.nansum(grid_sno.get_liquid_water_content()) + runoff_sno
         )

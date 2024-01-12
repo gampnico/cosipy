@@ -19,7 +19,7 @@ class TestParamRadiation:
         test_grid = conftest_mock_grid
         allow_list = ["Bintanja95"]
         conftest_boilerplate.patch_variable(
-            monkeypatch, pRad, {"penetrating_method": "WrongMethod"}
+            monkeypatch, pRad.constants, {"penetrating_method": "WrongMethod"}
         )
         error_msg = (
             f'Penetrating method = "{pRad.constants.penetrating_method}" ',

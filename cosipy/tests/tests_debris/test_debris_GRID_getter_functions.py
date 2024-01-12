@@ -53,21 +53,6 @@ class TestGridSpecs:
 class TestGridSetup:
     """Tests initialisation methods for Grid objects."""
 
-    node_type = cpgrid._init_node_type()
-    grid_type = cpgrid._init_grid_type(node_type)
-    fields = [
-        ("layer_heights", float64[:]),
-        ("layer_densities", float64[:]),
-        ("layer_temperatures", float64[:]),
-        ("layer_liquid_water_content", float64[:]),
-        ("layer_ice_fraction", optional(float64[:])),
-        ("number_nodes", intp),
-        ("new_snow_height", float64),
-        ("new_snow_timestamp", float64),
-        ("old_snow_timestamp", float64),
-        ("grid", grid_type),
-    ]
-
     def test_grid_init(self, conftest_boilerplate):
         data = {
             "layer_heights": [0.1, 0.2, 0.3],
@@ -106,7 +91,7 @@ class TestGridSetup:
 class TestGridGetter:
     """Tests get methods for Grid objects.
 
-    ..
+    .. note::
         Pytest documentation recommends `np.allclose` instead of
         `pytest.approx`.
 
@@ -120,24 +105,6 @@ class TestGridGetter:
         "layer_temperatures": float64([260, 260, 271, 271.5, 272]),
         "layer_liquid_water_content": float64([0.0, 0.0, 0.0, 0.0, 0.0]),
     }
-
-    def create_grid(self):
-        grid_object = cpgrid.Grid(
-            layer_heights=self.data["layer_heights"],
-            layer_densities=self.data["layer_densities"],
-            layer_temperatures=self.data["layer_temperatures"],
-            layer_liquid_water_content=self.data["layer_liquid_water_content"],
-        )
-        return grid_object
-
-    @pytest.fixture(name="grid", autouse=False, scope="function")
-    def fixture_grid(self):
-        return self.create_grid()
-
-    def test_create_grid(self):
-        test_grid = self.create_grid()
-        assert isinstance(test_grid, cpgrid.Grid)
-        assert test_grid.number_nodes == len(self.data["layer_heights"])
 
     def test_grid_get_height(self, grid, conftest_boilerplate):
         assert np.allclose(grid.get_height(), self.data["layer_heights"])

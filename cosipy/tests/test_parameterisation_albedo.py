@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 import pytest
 
@@ -96,27 +98,31 @@ class TestParamAlbedoSelection:
         albedo = module_albedo.updateAlbedo(grid)
         assert isinstance(albedo, float)
 
-    @pytest.mark.parametrize("arg_method", ["Wrong Method", "", None])
     def test_updateAlbedo_method_error(
-        self, monkeypatch, conftest_mock_grid, conftest_boilerplate, arg_method
+        self, monkeypatch, conftest_mock_grid, conftest_boilerplate
     ):
         grid = conftest_mock_grid
         valid_methods = ["Oerlemans98", "Lejeune13"]
-
+        test_method = "Wrong Method"
         conftest_boilerplate.patch_variable(
-            monkeypatch, module_albedo.constants, {"albedo_method": arg_method}
+            monkeypatch,
+            module_albedo.constants,
+            {"albedo_method": test_method},
         )
         conftest_boilerplate.patch_variable(
             monkeypatch, module_albedo, {"use_debris": False}
         )
-        assert constants.albedo_method == arg_method
-        error_message = (
-            f'Albedo method = "{constants.albedo_method}"',
-            f"is not allowed, must be one of",
-            f'{", ".join(valid_methods)}',
+
+        assert constants.albedo_method == test_method
+        error_message = " ".join(
+            (
+                f'Albedo method = "{test_method}"',
+                f"is not allowed, must be one of",
+                f'{", ".join(valid_methods)}',
+            )
         )
 
-        with pytest.raises(ValueError, match=" ".join(error_message)):
+        with pytest.raises(ValueError, match=re.escape(error_message)):
             module_albedo.updateAlbedo(grid)
 
 

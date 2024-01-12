@@ -127,7 +127,7 @@ class TestGridSetup:
 class TestGridGetter:
     """Tests get methods for Grid objects.
 
-    ..
+    .. note::
         Pytest documentation recommends `np.allclose` instead of
         `pytest.approx`.
 

@@ -12,7 +12,6 @@ class TestPatchProxiesBuilder:
         height (float): Layer height [:math:`m`].
         density (float): Snow density [:math:`kg~m^{-3}`].
         ice_fraction (float): Volumetric ice fraction [-].
-        ntype (int): Type of Node [-].
     """
 
     height = 0.1
