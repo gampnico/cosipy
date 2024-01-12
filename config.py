@@ -23,7 +23,7 @@ time_end_str=(time_end[0:10]).replace('-','')
 data_path = './data/'
 
 # Zhadang example
-input_netcdf= 'Zhadang/Zhadang_ERA5_2009_2018.nc'
+input_netcdf= 'Zhadang/Zhadang_ERA5_2009.nc'
 output_netcdf = 'Zhadang_ERA5_'+time_start_str+'-'+time_end_str+'.nc'
 
 # Hintereisferner example
@@ -70,6 +70,7 @@ compression_level = 2                                       # Choose value betwe
 slurm_use = False                                           # use SLURM
 workers = None                                              # setting is ued only without SLURM usage; number of workers (cores); with "None" all available cores are used
 local_port = 8786                                           # port for local cluster
+numba_parallel = False                                      # numba uses parallelisation (only useful for high-res spatial data)
 
 #-----------------------------------
 # WRITE FULL FIELDS 
@@ -102,5 +103,6 @@ yend = 40
 #-----------------------------------
 # CPKERNEL
 #-----------------------------------
-use_debris = True                                          # Simulate with debris-cover
-use_cache = False                                          # Cache njitted functions to disk (<2 MB). Use with caution - cached functions won't rebind to a new value for a constant or global variable.
+use_debris = True                                           # Simulate with debris-cover
+use_cache = False                                           # Cache njitted functions to disk (<2 MB). Use with caution - cached functions won't rebind to a new value for a constant or global variable.
+show_warnings = False                                       # Show bug warnings. Slows performance.
