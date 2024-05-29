@@ -75,9 +75,14 @@ class TestDebrisBoilerplate:
             pass
     """
 
-    def add_debris_to_grid(self, grid_obj: cpgrid.Grid):
-        """Add a debris layer."""
-        grid_obj.add_fresh_debris(0.2, 2840.0, 273.15, 0.0)
+    def add_debris_to_grid(self, grid_obj, debris: int = 5, snow: int = 2):
+        """Add debris layers with snowpack."""
+        for i in range(0, debris):
+            grid_obj.add_fresh_debris(0.1, 2840.0, 274.15, 0.0)
+        for i in range(0, snow):
+            grid_obj.add_fresh_snow(
+                0.05, 300, min(270.15 + i / 2, 273.15), 0.0
+            )
 
     def test_add_debris_to_grid(self):
         """Add debris layer using fixture."""
@@ -98,14 +103,23 @@ class TestDebrisBoilerplate:
             layer_temperatures=data["layer_temperatures"],
             layer_liquid_water_content=data["layer_liquid_water_content"],
         )
-
         test_nodes = grid.number_nodes
-        self.add_debris_to_grid(grid_obj=grid)
-        assert grid.get_node_ntype(0) == 1
-        for i in range(1, grid.number_nodes):
+        test_snow = grid.get_number_snow_layers()
+
+        arg_debris = 5
+        arg_snow = 2
+        self.add_debris_to_grid(
+            grid_obj=grid, debris=arg_debris, snow=arg_snow
+        )
+
+        assert grid.get_number_debris_layers() == arg_debris
+        assert grid.get_number_snow_layers() == arg_snow + test_snow
+
+        for i in range(0, arg_snow):
             assert grid.get_node_ntype(i) == 0
-        assert grid.number_nodes == test_nodes + 1
-        assert grid.get_number_debris_layers() == 1
+        for i in range(arg_snow, arg_snow + arg_debris):
+            assert grid.get_node_ntype(i) == 1
+        assert grid.number_nodes == test_nodes + arg_debris + arg_snow
 
     def test_boilerplate_integration(self):
         """Integration test for boilerplate methods."""

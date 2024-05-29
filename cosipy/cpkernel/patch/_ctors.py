@@ -203,6 +203,10 @@ class BaseNode(structref.StructRefProxy):
     def get_layer_ice_fraction(self) -> optional(float64):
         return self.ice_fraction
 
+    @njit(cache=False)
+    def set_layer_ice_fraction(self, value: float64) -> None:
+        self.ice_fraction = value
+
     @property
     def refreeze(self) -> float64:
         return self.get_layer_refreeze()
@@ -210,6 +214,14 @@ class BaseNode(structref.StructRefProxy):
     @refreeze.setter
     def refreeze(self, value: float64) -> None:
         self.set_layer_refreeze(value)
+
+    @njit(cache=False)
+    def get_refreeze(self) -> float64:
+        return self.refreeze
+
+    @njit(cache=False)
+    def set_layer_refreeze(self, value: float64) -> None:
+        self.refreeze = value
 
     @property
     def ntype(self) -> int64:
@@ -354,7 +366,7 @@ class Node(BaseNode):
 
     Attributes:
         height (float): Layer height [:math:`m`].
-        snow_density (float): Layer snow density [:math:`kg~m^{-3}`].
+        density (float): Layer snow density [:math:`kg~m^{-3}`].
         temperature (float): Layer temperature [:math:`K`].
         liquid_water_content (float): Liquid water content
             [:math:`m~w.e.`].
@@ -486,7 +498,7 @@ class Node(BaseNode):
 
     @njit(cache=False)
     def get_layer_specific_heat(self) -> float64:
-        """Get the node's volumetrically averaged specific heat capacity.
+        """Get the node's volume-weighted specific heat capacity.
 
         Returns:
             Specific heat capacity [:math:`J~kg^{-1}~K^{-1}`].
@@ -513,7 +525,7 @@ class Node(BaseNode):
 
     @njit(cache=False)
     def get_layer_thermal_conductivity(self) -> float64:
-        """Get the node's volumetrically weighted thermal conductivity.
+        """Get the node's volume-weighted thermal conductivity.
 
         Returns:
             Thermal conductivity [:math:`W~m^{-1}~K^{-1}`].
@@ -799,14 +811,13 @@ class DebrisNode(BaseNode):
 
     @njit(cache=False)
     def get_layer_air_porosity(self) -> float64:
-        """Get the node's volumetrically-weighted interstitial void porosity.
+        """Get the node's volume-weighted interstitial void porosity.
 
         The function's name is kept as `get_layer_air_porosity` for
         cross-compatibility with other Node objects.
 
         Does NOT include the debris' porosity, and assumes no liquid.
-        Note that the packing and void porosities are
-        volumetrically-weighted!
+        Note that the packing and void porosities are volume-weighted!
 
         Returns:
             float: Interstitial void porosity [-].
@@ -824,7 +835,7 @@ class DebrisNode(BaseNode):
 
     @njit(cache=False)
     def get_layer_specific_heat(self) -> float64:
-        """Get the node's volumetrically averaged specific heat capacity.
+        """Get the node's volume-weighted specific heat capacity.
 
         Returns:
             Specific heat capacity [:math:`J~kg^{-1}~K^{-1}`].
@@ -842,7 +853,7 @@ class DebrisNode(BaseNode):
 
     @njit(cache=False)
     def get_layer_thermal_conductivity(self) -> float64:
-        """Get the node's volumetrically weighted thermal conductivity.
+        """Get the node's volume-weighted thermal conductivity.
 
         Returns:
             Thermal conductivity [:math:`W~m^{-1}~K^{-1}`].
@@ -863,7 +874,7 @@ class DebrisNode(BaseNode):
         """Get the node's thermal effusivity.
 
         Returns:
-            Thermal effusivity [:math:`W~s^{0.5}~m^{-2}~K`]..
+            Thermal effusivity [:math:`W~s^{0.5}~m^{-2}~K`].
         """
         return cpk_debris.DebrisNode_get_layer_thermal_effusivity(self)
 

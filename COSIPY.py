@@ -33,16 +33,14 @@ import numpy as np
 import pandas as pd
 import scipy
 import yaml
-# from dask import compute, delayed
-# import dask as da
-# from dask.diagnostics import ProgressBar
+
 from dask.distributed import as_completed, progress
 from dask_jobqueue import SLURMCluster
 from distributed import Client, LocalCluster
 # import dask
 from tornado import gen
 
-from config import *
+import config as cfg
 from cosipy.cpkernel.cosipy_core import cosipy_core
 from cosipy.cpkernel.io import IOClass
 from slurm_config import *
@@ -74,7 +72,7 @@ def main():
     #-----------------------------------------------
     # Create a client for distributed calculations
     #-----------------------------------------------
-    if (slurm_use):
+    if (cfg.slurm_use):
 
         with SLURMCluster(scheduler_port=port, cores=cores, processes=processes, memory=memory, shebang=shebang, name=name, job_extra=slurm_parameters, local_directory='logs/dask-worker-space') as cluster:
             cluster.scale(processes * nodes)   
@@ -84,7 +82,7 @@ def main():
             run_cosipy(cluster, IO, DATA, RESULT, RESTART, futures)
 
     else:
-        with LocalCluster(scheduler_port=local_port, n_workers=workers, local_directory='logs/dask-worker-space', threads_per_worker=1, silence_logs=True) as cluster:
+        with LocalCluster(scheduler_port=cfg.local_port, n_workers=cfg.workers, local_directory='logs/dask-worker-space', threads_per_worker=1, silence_logs=True) as cluster:
             print(cluster)
             run_cosipy(cluster, IO, DATA, RESULT, RESTART, futures)
 
@@ -107,9 +105,9 @@ def main():
         FillValue = -9999 
         scale_factor, add_offset = compute_scale_and_offset(dataMin, dataMax, 16)
         #encoding[var] = dict(zlib=True, complevel=compression_level, dtype=dtype, scale_factor=scale_factor, add_offset=add_offset, _FillValue=FillValue)
-        encoding[var] = dict(zlib=True, complevel=compression_level)
+        encoding[var] = dict(zlib=True, complevel=cfg.compression_level)
   
-    IO.get_result().to_netcdf(os.path.join(data_path,'output',output_netcdf), encoding=encoding, mode = 'w')
+    IO.get_result().to_netcdf(os.path.join(cfg.data_path,'output',cfg.output_netcdf), encoding=encoding, mode = 'w')
 
     encoding = dict()
     for var in IO.get_restart().data_vars:
@@ -119,9 +117,9 @@ def main():
         FillValue = -9999 
         scale_factor, add_offset = compute_scale_and_offset(dataMin, dataMax, 16)
         #encoding[var] = dict(zlib=True, complevel=compression_level, dtype=dtype, scale_factor=scale_factor, add_offset=add_offset, _FillValue=FillValue)
-        encoding[var] = dict(zlib=True, complevel=compression_level)
+        encoding[var] = dict(zlib=True, complevel=cfg.compression_level)
     
-    IO.get_restart().to_netcdf(os.path.join(data_path,'restart','restart_'+timestamp+'.nc'), encoding=encoding)
+    IO.get_restart().to_netcdf(os.path.join(cfg.data_path,'restart','restart_'+timestamp+'.nc'), encoding=encoding)
     
     #-----------------------------------------------
     # Stop time measurement
@@ -138,9 +136,11 @@ def main():
     print('\t SIMULATION WAS SUCCESSFUL')
     print('--------------------------------------------------------------')
 
+def run_calculations(futures):
+    progress(futures)
 
 def run_cosipy(cluster, IO, DATA, RESULT, RESTART, futures):
-
+    # dask_memusage.install(cluster.scheduler, "memusage.csv")
     with Client(cluster) as client:
         print('--------------------------------------------------------------')
         print('\t Starting clients and submit jobs ... \n')
@@ -150,23 +150,23 @@ def run_cosipy(cluster, IO, DATA, RESULT, RESTART, futures):
         print(client)
 
         # Get dimensions of the whole domain
-        ny = DATA.dims[northing]
-        nx = DATA.dims[easting]
+        ny = DATA.dims[cfg.northing]
+        nx = DATA.dims[cfg.easting]
 
         cp = cProfile.Profile()
 
         # Get some information about the cluster/nodes
-        total_grid_points = DATA.dims[northing]*DATA.dims[easting]
-        if slurm_use is True:
-            total_cores = processes*nodes
+        total_grid_points = DATA.dims[cfg.northing]*DATA.dims[cfg.easting]
+        if cfg.slurm_use is True:
+            total_cores = cfg.processes*cfg.nodes
             points_per_core = total_grid_points // total_cores
             print(total_grid_points, total_cores, points_per_core)
 
         # Check if evaluation is selected:
-        if stake_evaluation is True:
+        if cfg.stake_evaluation is True:
             # Read stake data (data must be given as cumulative changes)
-            df_stakes_loc = pd.read_csv(stakes_loc_file, delimiter='\t', na_values='-9999')
-            df_stakes_data = pd.read_csv(stakes_data_file, delimiter='\t', index_col='TIMESTAMP', na_values='-9999')
+            df_stakes_loc = pd.read_csv(cfg.stakes_loc_file, delimiter='\t', na_values='-9999')
+            df_stakes_data = pd.read_csv(cfg.stakes_data_file, delimiter='\t', index_col='TIMESTAMP', na_values='-9999')
             df_stakes_data.index = pd.to_datetime(df_stakes_data.index)
 
             # Uncomment, if stake data is given as changes between measurements
@@ -177,7 +177,7 @@ def run_cosipy(cluster, IO, DATA, RESULT, RESTART, futures):
             df_val = df_stakes_data.copy()
 
             # reshape and stack coordinates
-            if WRF:
+            if cfg.WRF:
                 coords = np.column_stack((DATA.lat.values.ravel(), DATA.lon.values.ravel()))
             else:
                 # in case lat/lon are 1D coordinates
@@ -191,7 +191,7 @@ def run_cosipy(cluster, IO, DATA, RESULT, RESTART, futures):
             stakes_list = []
             for index, row in df_stakes_loc.iterrows():
                 index = ground_pixel_tree.query(transform_coordinates((row['lat'], row['lon'])))
-                if WRF:
+                if cfg.WRF:
                     index = np.unravel_index(index[1], DATA.lat.shape)
                 else:
                     index = np.unravel_index(index[1], lats.shape)
@@ -204,8 +204,8 @@ def run_cosipy(cluster, IO, DATA, RESULT, RESTART, futures):
 
         # Distribute data and model to workers
         start_res = datetime.now()
-        for y,x in product(range(DATA.dims[northing]),range(DATA.dims[easting])):
-            if stake_evaluation is True:
+        for y,x in product(range(DATA.dims[cfg.northing]),range(DATA.dims[cfg.easting])):
+            if cfg.stake_evaluation is True:
                 stake_names = []
                 # Check if the grid cell contain stakes and store the stake names in a list
                 for idx, (stake_loc_y, stake_loc_x, stake_name) in enumerate(stakes_list):
@@ -214,15 +214,15 @@ def run_cosipy(cluster, IO, DATA, RESULT, RESTART, futures):
             else:
                 stake_names = None
                 
-            if WRF is True:
+            if cfg.WRF:
                 mask = DATA.MASK.sel(south_north=y, west_east=x)
                 # Provide restart grid if necessary
-                if ((mask==1) & (not restart)):
+                if ((mask==1) & (not cfg.restart)):
                     if np.isnan(DATA.sel(south_north=y, west_east=x).to_array()).any():
                         print('ERROR!!!!!!!!!!! There are NaNs in the dataset')
                         sys.exit()
                     futures.append(client.submit(cosipy_core, DATA.sel(south_north=y, west_east=x), y, x, stake_names=stake_names, stake_data=df_stakes_data))
-                elif ((mask==1) & (restart)):
+                elif ((mask==1) & (cfg.restart)):
                     if np.isnan(DATA.sel(south_north=y, west_east=x).to_array()).any():
                         print('ERROR!!!!!!!!!!! There are NaNs in the dataset')
                         sys.exit()
@@ -232,12 +232,12 @@ def run_cosipy(cluster, IO, DATA, RESULT, RESTART, futures):
             else:
                 mask = DATA.MASK.isel(lat=y, lon=x)
                 # Provide restart grid if necessary
-                if ((mask==1) & (not restart)):
+                if ((mask==1) & (not cfg.restart)):
                     if np.isnan(DATA.isel(lat=y,lon=x).to_array()).any():
                         print('ERROR!!!!!!!!!!! There are NaNs in the dataset')
                         sys.exit()
                     futures.append(client.submit(cosipy_core, DATA.isel(lat=y, lon=x), y, x, stake_names=stake_names, stake_data=df_stakes_data))
-                elif ((mask==1) & (restart)):
+                elif ((mask==1) & (cfg.restart)):
                     if np.isnan(DATA.isel(lat=y,lon=x).to_array()).any():
                         print('ERROR!!!!!!!!!!! There are NaNs in the dataset')
                         sys.exit()
@@ -245,12 +245,12 @@ def run_cosipy(cluster, IO, DATA, RESULT, RESTART, futures):
                                              GRID_RESTART=IO.create_grid_restart().isel(lat=y, lon=x), 
                                              stake_names=stake_names, stake_data=df_stakes_data))
         # Finally, do the calculations and print the progress
-        progress(futures)
+        run_calculations(futures)
 
         #---------------------------------------
         # Guarantee that restart file is closed
         #---------------------------------------
-        if (restart==True):
+        if (cfg.restart):
             IO.get_grid_restart().close()
       
         # Create numpy arrays which aggregates all local results
@@ -268,11 +268,13 @@ def run_cosipy(cluster, IO, DATA, RESULT, RESTART, futures):
                 indY,indX,local_restart,RAIN,SNOWFALL,LWin,LWout,H,LE,B,QRR,MB,surfMB,Q,SNOWHEIGHT,TOTALHEIGHT,TS,ALBEDO,NLAYERS, \
                                 ME,intMB,EVAPORATION,SUBLIMATION,CONDENSATION,DEPOSITION,REFREEZE,subM,Z0,surfM,MOL, \
                                 LAYER_HEIGHT,LAYER_RHO,LAYER_T,LAYER_LWC,LAYER_CC,LAYER_POROSITY,LAYER_ICE_FRACTION, \
-                                LAYER_IRREDUCIBLE_WATER,LAYER_REFREEZE,stake_names,stat,df_eval = future.result()
+                                LAYER_IRREDUCIBLE_WATER,LAYER_REFREEZE,stake_names,stat,df_eval,\
+                                QPS, SWnet, LAYER_THERMAL_CONDUCTIVITY, LAYER_NTYPE, LAYER_G_PENETRATING = future.result()
                
                 IO.copy_local_to_global(indY,indX,RAIN,SNOWFALL,LWin,LWout,H,LE,B,QRR,MB,surfMB,Q,SNOWHEIGHT,TOTALHEIGHT,TS,ALBEDO,NLAYERS, \
                                 ME,intMB,EVAPORATION,SUBLIMATION,CONDENSATION,DEPOSITION,REFREEZE,subM,Z0,surfM,MOL,LAYER_HEIGHT,LAYER_RHO, \
-                                LAYER_T,LAYER_LWC,LAYER_CC,LAYER_POROSITY,LAYER_ICE_FRACTION,LAYER_IRREDUCIBLE_WATER,LAYER_REFREEZE)
+                                LAYER_T,LAYER_LWC,LAYER_CC,LAYER_POROSITY,LAYER_ICE_FRACTION,LAYER_IRREDUCIBLE_WATER,LAYER_REFREEZE, \
+                                QPS, SWnet, LAYER_THERMAL_CONDUCTIVITY, LAYER_NTYPE, LAYER_G_PENETRATING)
 
                 IO.copy_local_restart_to_global(indY,indX,local_restart)
 
@@ -282,25 +284,25 @@ def run_cosipy(cluster, IO, DATA, RESULT, RESTART, futures):
                 # Write restart data to file
                 IO.write_restart_to_file()
 
-                if stake_evaluation is True:
+                if cfg.stake_evaluation is True:
                     # Store evaluation of stake measurements to dataframe
                     stat = stat.rename('rmse')
                     df_stat = pd.concat([df_stat, stat])
 
                     for i in stake_names:
-                        if (obs_type == 'mb'):
+                        if (cfg.obs_type == 'mb'):
                             df_val[i] = df_eval.mb
-                        if (obs_type == 'snowheight'):
+                        if (cfg.obs_type == 'snowheight'):
                             df_val[i] = df_eval.snowheight
 
         # Measure time
         end_res = datetime.now()-start_res 
         print("\t Time required to do calculations: %4g minutes %2g seconds \n" % (end_res.total_seconds()//60.0,end_res.total_seconds()%60.0))
       
-        if stake_evaluation is True:
+        if cfg.stake_evaluation is True:
             # Save the statistics and the mass balance simulations at the stakes to files
-            df_stat.to_csv(os.path.join(data_path,'output','stake_statistics.csv'),sep='\t', float_format='%.2f')
-            df_val.to_csv(os.path.join(data_path,'output','stake_simulations.csv'),sep='\t', float_format='%.2f')
+            df_stat.to_csv(os.path.join(cfg.data_path,'output','stake_statistics.csv'),sep='\t', float_format='%.2f')
+            df_val.to_csv(os.path.join(cfg.data_path,'output','stake_simulations.csv'),sep='\t', float_format='%.2f')
 
 
 
@@ -326,7 +328,7 @@ def transform_coordinates(coords):
     A = 6378.137 # major axis [km]   
     E2 = 6.69437999014e-3 # eccentricity squared    
     
-    coords = np.asarray(coords).astype(float)
+    coords = np.asarray(coords).astype(np.float64)
                                                       
     # is coords a tuple? Convert it to an one-element array of tuples
     if coords.ndim == 1:

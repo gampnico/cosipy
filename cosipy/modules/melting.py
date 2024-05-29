@@ -38,7 +38,8 @@ def surface_melting(
             sw_net, lw_in, lw_out, ghf, rhf, shf, lhf
         )
     elif grid.get_node_ntype(0) == 1:
-        melt_energy = get_debris_melt_energy_reid(grid)
+        # melt_energy = get_debris_melt_energy_reid(grid)
+        melt_energy = 0.0  # only subsurface melt
     else:
         melt_energy = get_surface_melt_energy_sum(
             sw_net, lw_in, lw_out, ghf, rhf, shf, lhf
@@ -81,7 +82,8 @@ def get_surface_melt_energy_sum(
 def get_debris_melt_energy_reid(grid) -> float:
     """Get melt energy below a surface debris layer.
 
-    Adapted from Reid et al., (2012). Only valid for debris layers.
+    Adapted from Reid et al., (2012). Only valid for contiguous debris
+    layers.
 
     Args:
         grid (Grid): Glacier data mesh.
@@ -89,19 +91,17 @@ def get_debris_melt_energy_reid(grid) -> float:
     Returns:
         Conductive heat flux through the surface debris layer.
     """
-    _, debris_ice_idx = grid.get_debris_extents(0)
-    delta_T = grid.get_node_temperature(0) - grid.get_node_temperature(
-        debris_ice_idx - 1
-    )
+    _, debris_lowest = grid.get_debris_extents(0)
+    delta_T = grid.get_node_temperature(
+        debris_lowest
+    ) - grid.get_node_temperature(0)
     debris_layer_heights = grid.get_total_debris_height()
 
     conductive_heat_flux = -grid.get_node_thermal_conductivity(0) * (
         delta_T / debris_layer_heights
     )
-    if conductive_heat_flux < 0.0:
-        conductive_heat_flux = 0.0
 
-    return conductive_heat_flux
+    return max(0.0, conductive_heat_flux)
 
 
 @njit
@@ -122,3 +122,39 @@ def get_surface_melt_rate(
     melt_rate = melt_energy * dt / (density * constants.lat_heat_melting)
 
     return melt_rate
+
+
+@njit
+def get_surface_melt_energy_eti(
+    air_temperature: float,
+    albedo: float,
+    sw_net: float,
+    threshold: int = 1,
+    dt: int = 3600,
+) -> float:
+    """Get surface melt energy for debris (Pellicciotti et al., 2005).
+
+    Pellicciotti et al. (2005) use a threshold temperature of 1˚C. Only
+    valid for debris layers.
+
+    Args:
+        air_temperature: Surface air temperature [K].
+        albedo: Debris albedo.
+        sw_net: Net surface shortwave radiation [W m^-2].
+        threshold: Offset for ice melt temperature.
+        dt: Timestep resolution.
+
+    Returns:
+        Available melt energy per timestep.
+    """
+
+    if air_temperature > constants.zero_temperature + threshold:
+        melt_energy = (
+            constants.temperature_factor * air_temperature
+            + (1 - albedo) * sw_net * constants.shortwave_radiation_factor
+        )
+    else:
+        melt_energy = 0.0
+
+    # TODO: Check if this is always fixed at 3600!
+    return melt_energy / dt

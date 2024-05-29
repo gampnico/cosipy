@@ -171,12 +171,9 @@ class Grid:
         self.set_fresh_snow_props(height)
 
     def add_fresh_debris(
-        self, height, density, temperature, liquid_water_content
+        self, height, density, temperature, liquid_water_content, idx: int = 0
     ):
         """Add a debris layer (DebrisNode).
-
-        Adds a debris layer to the beginning of the node list (upper
-        layer). This buries any snow.
 
         Parameters
         ----------
@@ -191,12 +188,12 @@ class Grid:
         """
 
         self.grid.insert(
-            0,
+            idx,
             DebrisNode(height, density, temperature, 0.0, 0.0),
         )
         self.number_nodes += 1
-
-        self.set_fresh_snow_props(0.0)  # snow is buried under debris
+        if idx == 0:
+            self.set_fresh_snow_props(0.0)  # snow is buried under debris
 
     def remove_node(self, idx: list = None):
         """Remove a layer (node) from the grid (node list).
@@ -344,7 +341,9 @@ class Grid:
                 self.get_node_density(idx + 1) < constants.snow_ice_threshold
             ):
                 self.merge_nodes(idx)
-            elif (self.get_node_density(idx) >= constants.snow_ice_threshold) & (
+            elif (
+                self.get_node_density(idx) >= constants.snow_ice_threshold
+            ) & (
                 self.get_node_density(idx + 1) >= constants.snow_ice_threshold
             ):
                 self.merge_nodes(idx)
@@ -681,7 +680,10 @@ class Grid:
                 self.merge_nodes(idx)
                 merge_counter = merge_counter + 1
             # elif ((self.get_node_height(idx)<=minimum_snow_layer_height) & (dRho<=density_threshold_merging)):
-            elif self.get_node_height(idx) <= constants.minimum_snow_layer_height:
+            elif (
+                self.get_node_height(idx)
+                <= constants.minimum_snow_layer_height
+            ):
                 self.remove_node([idx])
             else:
                 idx += 1
@@ -722,7 +724,7 @@ class Grid:
                     self.get_node_density(idx) - self.get_node_density(idx + 1)
                 )
                 if (
-                    _check_node_is_snow(self, idx + 1)
+                    (not _check_node_is_debris(self, idx + 1))
                     & (dT <= constants.temperature_threshold_merging)
                     & (dRho <= constants.density_threshold_merging)
                     & (self.get_node_height(idx) <= 0.1)
@@ -743,8 +745,8 @@ class Grid:
                 idx += 1  # skip current debris layer
 
         # Correct first layer
-        if not _check_node_ntype(self, 0, 1):
-            self.correct_layer(0, constants.first_layer_height)
+        if not _check_node_is_debris(self, 0):
+            self.correct_layer_selector(0, constants.first_layer_height)
 
     def split_node(self, pos):
         """Split node at position.
@@ -956,7 +958,7 @@ class Grid:
         """
         lwc_from_layers = 0.0
 
-        while melt > 0.0:
+        while melt > 0.0 and idx < self.number_nodes:
             # Get SWE of layer
             SWE = self.get_node_height(idx) * (
                 self.get_node_density(idx) / constants.water_density
@@ -1356,11 +1358,11 @@ class Grid:
 
     def get_supraglacial_snow(self) -> float:
         """Get the snow height above the debris layer."""
-        idx = 0
+        debris_start = self.get_next_debris_layer()
         heights = 0.0
-        while (idx < self.number_nodes) & (
-            not _check_node_is_debris(self, idx)
-        ):
+
+        idx = 0
+        while (idx < debris_start) & (_check_node_is_snow(self, idx)):
             heights += self.get_node_height(idx)
             idx += 1
         return heights
@@ -1405,8 +1407,8 @@ class Grid:
             idx: Layer index from which to begin search.
 
         Returns:
-            tuple[int, int]: Indices for the uppermost debris layer and
-            the uppermost subdebris (snow/ice) layer.
+            tuple[int, int]: Indices for the uppermost and lowermost
+            debris layers.
         """
         debris_start = self.get_next_debris_layer(idx)
         debris_end = self.get_next_snow_ice_layer(debris_start) - 1
@@ -1600,6 +1602,7 @@ def _check_node_is_snow(self, idx: int) -> bool:
     Returns:
         True if layer is snow, otherwise returns False.
     """
+
     return (self.get_node_ntype(idx) == 0) & (
         self.get_node_density(idx) < constants.snow_ice_threshold
     )

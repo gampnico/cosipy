@@ -22,7 +22,9 @@ def updateAlbedo(GRID, surface_temperature, albedo_snow) -> float:
     elif constants.albedo_method == "Oerlemans98":
         alphaMod = method_Oerlemans(GRID)
     elif constants.albedo_method == "Bougamont05":
-        alphaMod, albedo_snow = method_Bougamont(GRID, surface_temperature, albedo_snow)
+        alphaMod, albedo_snow = method_Bougamont(
+            GRID, surface_temperature, albedo_snow
+        )
 
     else:
         error_message = (
@@ -108,7 +110,7 @@ def method_Oerlemans(GRID) -> float:
     # Check if snow or ice
     if GRID.get_node_density(0) <= constants.snow_ice_threshold:
         # Get current snowheight from layer height
-        h = GRID.get_total_snowheight()  # np.sum(GRID.get_height()[0:idx])
+        h = GRID.get_supraglacial_snow()  # np.sum(GRID.get_height()[0:idx])
 
         # Surface albedo according to Oerlemans & Knap (1998), JGR
         alphaSnow = get_simple_albedo(elapsed_time=hours_since_snowfall)
@@ -122,14 +124,12 @@ def method_Oerlemans(GRID) -> float:
 
     return alphaMod
 
+
 @njit(cache=False)
 def method_Bougamont(GRID, surface_temperature, albedo_snow):
     # Get hours since the last snowfall
     # First get fresh snow properties (height and timestamp)
-    _, fresh_snow_timestamp, _ = GRID.get_fresh_snow_props()
-
-    # Get time difference between last snowfall and now:
-    hours_since_snowfall = (fresh_snow_timestamp) / 3600.0
+    _, _, hours_since_snowfall = get_surface_properties(GRID)
 
     # Convert integration time from seconds to days:
     dt_days = constants.dt / 86400.0
@@ -137,13 +137,14 @@ def method_Bougamont(GRID, surface_temperature, albedo_snow):
     # Note: accounting for disapearance of uppermost fresh snow layer difficult due to non-constant decay rate. Unsure how to implement.
 
     # Get current snowheight from layer height:
-    h = GRID.get_total_snowheight()
 
     # Check if snow or ice:
     if GRID.get_node_density(0) <= constants.snow_ice_threshold:
+        h = GRID.get_total_snowheight()
+        surface_temperature = GRID.get_node_temperature(0)
         if surface_temperature >= constants.zero_temperature:
             # Snow albedo decay timescale (t*) on a melting snow surface:
-            t_star = constants.t_star_wet
+            t_star = float(constants.t_star_wet)
         else:
             # Snow albedo decay timescale (t*) on a dry snow surface:
             if surface_temperature < constants.t_star_cutoff:
@@ -161,9 +162,9 @@ def method_Bougamont(GRID, surface_temperature, albedo_snow):
 
         # Effect of snow albedo decay due to the temporal metamorphosis of snow (Bougamont et al. 2005 - based off Oerlemans & Knap 1998):
         # Exponential function discretised in order to account for variable surface temperature-dependant decay timescales.
-        albedo_snow = (
-            albedo_snow - (albedo_snow - constants.albedo_firn) / t_star * dt_days
-        )
+        t_star_days = float(t_star) * float(dt_days)
+        delta_albedo = albedo_snow - constants.albedo_firn
+        albedo_snow -= delta_albedo / (t_star_days)
 
         # Reset if snowfall in current timestep
         if hours_since_snowfall == 0:
@@ -182,6 +183,7 @@ def method_Bougamont(GRID, surface_temperature, albedo_snow):
     alphaMod = float(alphaMod)
 
     return alphaMod, albedo_snow
+
 
 @njit(cache=False)
 def get_albedo_weight_lejeune(snow_depth: float) -> float:
@@ -215,20 +217,17 @@ def method_lejeune(GRID) -> float:
     """
 
     if GRID.get_node_ntype(0) == 0:
-        fresh_snow_height, _, hours_since_snowfall = get_surface_properties(
-            GRID=GRID
-        )
-
-        albedo_weight = get_albedo_weight_lejeune(snow_depth=fresh_snow_height)
-        albedo_snow = get_simple_albedo(elapsed_time=hours_since_snowfall)
-        albedo = (
-            albedo_weight * albedo_snow
+        snow_height = GRID.get_supraglacial_snow()
+        albedo_weight = get_albedo_weight_lejeune(snow_depth=snow_height)
+        alpha_mod = method_Oerlemans(GRID)
+        alpha_mod = (
+            albedo_weight * alpha_mod
             + (1 - albedo_weight) * constants.albedo_debris
         )
     else:  # no need to calculate weights
-        albedo = constants.albedo_debris
+        alpha_mod = constants.albedo_debris
 
-    return albedo
+    return alpha_mod
 
 
 ### idea; albedo decay like (Brock et al. 2000)? or?

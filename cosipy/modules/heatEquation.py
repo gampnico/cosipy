@@ -28,7 +28,7 @@ def solveHeatEquation(GRID, dt: int):
     GRID.set_temperature(temperatures)
 
 
-@njit
+@njit(cache=False)
 def get_new_temperatures_cds2(
     grid, lower, central, upper, dt: int
 ) -> np.ndarray:
@@ -81,8 +81,98 @@ def get_new_temperatures_cds2(
 
         # Update the temperatures
         temperature_new[central] += (
-            (k_lo * dt_use * (temperature[lower] - temperature[central]) / (h_up))
-            - (k_up * dt_use * (temperature[central] - temperature[upper]) / (h_lo))
+            (
+                k_lo
+                * dt_use
+                * (temperature[lower] - temperature[central])
+                / h_up
+            )
+            - (
+                k_up
+                * dt_use
+                * (temperature[central] - temperature[upper])
+                / h_lo
+            )
+        ) / (0.5 * (h_lo + h_up))
+        temperature = temperature_new.copy()
+
+    return temperature
+
+
+@njit(cache=False)
+def get_new_temperatures_cds2_debris(
+    grid, lower, central, upper, dt: int, extents: tuple
+) -> np.ndarray:
+    """Solve heat equation using a 2nd-order central-difference scheme.
+
+    Args:
+        grid (Grid): Glacier data mesh.
+        lower: Sequence of lowermost spatial bounds (j-1).
+        central: Sequence of spatial midpoints (j).
+        upper: Sequence of uppermost spatial bounds (j+1).
+        dt: Integration time [s].
+
+    Returns:
+        Solved column temperatures.
+    """
+
+    lower_layer = extents[0]
+    upper_layer = extents[1]
+    k_mid = np.asarray(grid.get_thermal_diffusivity())
+    heights = np.asarray(grid.get_height())
+
+    # Get grid spacing
+    spacing = (heights[0 : upper_layer - 1] / 2.0) + (
+        heights[1:upper_layer] / 2.0
+    )
+    h_lo = spacing[lower_layer : upper_layer - 2]  # between z-1 and z
+    h_up = spacing[lower_layer + 1 : upper_layer - 1]  # between z and z+1
+
+    # Get temperature array from grid
+    temperature = np.array(grid.get_temperature())
+    temperature_new = temperature.copy()
+
+    k_lo = (
+        k_mid[lower_layer + 1 : upper_layer - 1]
+        + k_mid[lower_layer + 2 : upper_layer]
+    ) / 2.0
+    k_up = (
+        k_mid[lower_layer : upper_layer - 2]
+        + k_mid[lower_layer + 1 : upper_layer - 1]
+    ) / 2.0
+
+    stab_t = 0.0
+    c_stab = 0.8
+    dt_stab = c_stab * (
+        min(
+            [
+                min(spacing[lower_layer : upper_layer - 2] ** 2 / (2 * k_up)),
+                min(
+                    spacing[lower_layer + 1 : upper_layer - 1] ** 2
+                    / (2 * k_lo)
+                ),
+            ]
+        )
+    )
+
+    while stab_t < dt:
+        dt_use = np.minimum(dt_stab, dt - stab_t)
+        stab_t = stab_t + dt_use
+
+        # Update the temperatures
+        temperature_new[central] += (
+            (
+                k_lo
+                * dt_use
+                * (temperature[lower] - temperature[central])
+                / h_up
+            )
+            - (
+                k_up
+                * dt_use
+                * (temperature[central] - temperature[upper])
+                / h_lo
+            )
         ) / (0.5 * (h_lo + h_up))
         temperature = temperature_new.copy()
 
@@ -185,7 +275,9 @@ def set_midpoint_temperatures(grid, contact_temperature: float, idx: int):
         height=grid.get_node_height(idx_lo),
     )
 
-    grid.set_node_temperature(idx, top_layer_temperature)
+    grid.set_node_temperature(
+        idx, min(constants.zero_temperature, top_layer_temperature)
+    )
     grid.set_node_temperature(idx_lo, bottom_layer_temperature)
 
 
@@ -224,45 +316,66 @@ def solveHeatEquation_debris(grid, dt: int):
         idx_upper = []
 
         # Lower BC: clamp to freezing only when above ice
-        if not lower_debris_idx == grid.number_nodes - 1:
-            grid.set_node_temperature(
-                lower_debris_idx,
-                max(
-                    constants.zero_temperature,
-                    grid.get_node_temperature(lower_debris_idx + 1),
-                ),
-            )
+        # if not lower_debris_idx == grid.number_nodes - 1:
+        #     grid.set_node_temperature(
+        #         lower_debris_idx,
+        #         max(
+        #             constants.zero_temperature,
+        #             grid.get_node_temperature(lower_debris_idx + 1),
+        #         ),
+        #     )
+
+        # Set lower BC
+        if lower_debris_idx + 1 < grid.number_nodes:
+            set_boundary_condition(grid=grid, top_idx=lower_debris_idx+1)
+        
 
         # Reid and Brock iterates upwards, so solve icepack first
         if total_layers - lower_debris_idx > 1:
             # apply bfgs HE to icepack
-            idx_midpoint.append(*range(lower_debris_idx + 1, total_layers - 1))
-            idx_lower.append(*range(lower_debris_idx + 2, total_layers))
-            idx_upper.append(*range(lower_debris_idx, total_layers - 2))
+            for i in np.arange(lower_debris_idx + 1, total_layers - 1):
+                idx_midpoint.append(i)
+            for i in np.arange(lower_debris_idx + 2, total_layers):
+                idx_lower.append(i)
+            for i in np.arange(lower_debris_idx, total_layers - 2):
+                idx_upper.append(i)
 
-        temperatures = get_new_temperatures_cds2(
-            grid=grid,
-            lower=idx_lower,
-            central=idx_midpoint,
-            upper=idx_upper,
-            dt=dt,
-        )
+            temperatures = get_new_temperatures_cds2_debris(
+                grid=grid,
+                lower=np.array(idx_lower),
+                central=np.array(idx_midpoint),
+                upper=np.array(idx_upper),
+                dt=dt,
+                extents=(lower_debris_idx, total_layers),
+            )
 
         for idx in idx_midpoint:
             grid.set_node_temperature(idx, temperatures[idx])
-
+        
         # Solve debris temperatures
         set_heat_conservation_debris(grid=grid, dt=dt)
-
+        
         # Solve snow last as it's affected by the debris temperature.
         idx_midpoint = []
         idx_lower = []
         idx_upper = []
         if upper_debris_idx > 2:
             # apply bfgs HE to snowpack
-            idx_midpoint.append(*range(1, upper_debris_idx - 1))
-            idx_lower.append(*range(2, upper_debris_idx))
-            idx_upper.append(*range(0, upper_debris_idx - 2))
+            for i in np.arange(1, upper_debris_idx - 1):
+                idx_midpoint.append(i)
+            for i in np.arange(2, upper_debris_idx):
+                idx_lower.append(i)
+            for i in np.arange(0, upper_debris_idx - 2):
+                idx_upper.append(i)
+
+            temperatures = get_new_temperatures_cds2_debris(
+                grid=grid,
+                lower=np.array(idx_lower),
+                central=np.array(idx_midpoint),
+                upper=np.array(idx_upper),
+                dt=dt,
+                debris_interface=(0, upper_debris_idx),
+            )
 
 
 @njit
@@ -406,8 +519,8 @@ def get_s_tensor(
 
 
 @njit
-def set_upper_boundary_condition(grid, top_idx: int):
-    """Set upper boundary condition for Reid and Brock (2010).
+def set_boundary_condition(grid, top_idx: int):
+    """Set boundary condition for Reid and Brock (2010).
 
     Upper BCs:
     * Debris at surface: BC is set to surface temperature.
@@ -433,7 +546,9 @@ def set_upper_boundary_condition(grid, top_idx: int):
         skin_temperature = get_skin_temperature(
             grid=grid, idx=1, contact_temperature=contact_temperature
         )
-        grid.set_node_temperature(1, skin_temperature)
+        grid.set_node_temperature(
+            1, min(constants.zero_temperature, skin_temperature)
+        )
     else:
         # debris is buried under at least two layers
         contact_temperature = get_contact_temperature(
@@ -481,7 +596,11 @@ def get_internal_debris_temperature(grid, dt: int = 1) -> np.ndarray:
     current_top_temperature = grid.get_node_temperature(top_debris_idx)
 
     # Set upper BC
-    set_upper_boundary_condition(grid=grid, top_idx=top_debris_idx)
+    set_boundary_condition(grid=grid, top_idx=top_debris_idx)
+    if debris_extents[1] + 1 < grid.number_nodes-1:
+        set_boundary_condition(grid=grid, top_idx=debris_extents[1]+1)
+    
+
 
     # A8
     ivhc_tensor = get_ivhc_tensor(grid=grid, extents=debris_extents, dt=dt)

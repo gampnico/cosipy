@@ -124,7 +124,7 @@ def Node_get_layer_density(self) -> float64:
 
 @njit(cache=False)
 def Node_get_layer_specific_heat(self):
-    """Get the node's volumetrically averaged specific heat capacity.
+    """Get the node's volume-weighted specific heat capacity.
 
     Returns:
         Specific heat capacity [:math:`J~kg^{-1}~K^{-1}`].
@@ -171,7 +171,7 @@ def Node_get_layer_cold_content(self) -> float64:
 
 @njit(cache=False)
 def Node_get_layer_thermal_conductivity(self) -> float64:
-    """Get the node's volumetrically weighted thermal conductivity.
+    """Get the node's volume-weighted thermal conductivity.
 
     Returns:
         Thermal conductivity [:math:`W~m^{-1}~K^{-1}`].

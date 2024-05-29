@@ -7,12 +7,18 @@
 # SIMULATION PERIOD 
 #-----------------------------------
 # Zhadang
-time_start = '2009-01-01T06:00'
-time_end   = '2010-01-01T06:00'
+# time_start = '2009-01-01T06:00'
+# time_end   = '2009-01-10T06:00'
 
 # Hintereisferner
 #time_start = '2018-09-17T08:00'
 #time_end   = '2019-07-03T13:00'
+
+# Suldenferner
+time_start = '2016-01-01T00:00'
+# time_start = '2016-06-01T00:00'
+time_end   = '2017-01-01T00:00'
+# time_end   = '2016-10-30T00:00'
 
 #-----------------------------------
 # FILENAMES AND PATHS 
@@ -23,12 +29,17 @@ time_end_str=(time_end[0:10]).replace('-','')
 data_path = './data/'
 
 # Zhadang example
-input_netcdf= 'Zhadang/Zhadang_ERA5_2009.nc'
-output_netcdf = 'Zhadang_ERA5_'+time_start_str+'-'+time_end_str+'.nc'
+# input_netcdf= 'Zhadang/Zhadang_ERA5_2009.nc'
+# output_netcdf = 'Zhadang_ERA5_'+time_start_str+'-'+time_end_str+'.nc'
 
 # Hintereisferner example
 #input_netcdf = 'HEF/HEF_input.nc'
 #output_netcdf = 'hef.nc'
+
+# Suldenferner example
+input_netcdf= 'Suldenferner/Suldenferner_aws_2016_30m_qc_pt_snowfall.nc'
+output_netcdf = 'Suldenferner_AWS_DEB_ANN_rho_bcccp_2016_pt_'+time_start_str+'-'+time_end_str+'.nc'
+# output_netcdf = 'Suldenferner_AWS_CI_sfc_ghf_2016_pt_'+time_start_str+'-'+time_end_str+'.nc'
 
 #-----------------------------------
 # RESTART 
@@ -68,14 +79,14 @@ compression_level = 2                                       # Choose value betwe
 # PARALLELIZATION 
 #-----------------------------------
 slurm_use = False                                           # use SLURM
-workers = None                                              # setting is ued only without SLURM usage; number of workers (cores); with "None" all available cores are used
+workers = 15                                              # setting is ued only without SLURM usage; number of workers (cores); with "None" all available cores are used
 local_port = 8786                                           # port for local cluster
 numba_parallel = False                                      # numba uses parallelisation (only useful for high-res spatial data)
 
 #-----------------------------------
 # WRITE FULL FIELDS 
 #-----------------------------------    
-full_field = False                                          # write full fields (2D data) to file
+full_field = True                                          # write full fields (2D data) to file
 if WRF_X_CSPY:
     full_field = True
     

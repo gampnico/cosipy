@@ -24,6 +24,22 @@ from cosipy.modules.radCor import *
 
 import argparse
 
+def get_declination(latitude:float, doy:int) -> float:
+    """Gets declination for specific latitude and day of year.
+
+    Args:
+        latitude: Latitude in degrees.
+        doy: Day of year.
+
+    Returns:
+        Declination in degrees.
+    """
+    declination = np.radians(-23.45) * np.cos(
+        np.radians(latitude) * (doy + 10)
+    )
+
+    return np.degrees(declination)
+
 def create_1D_input(cs_file, cosipy_file, static_file, start_date, end_date):
     """ This function creates an input dataset from an offered csv file with input point data
         Here you need to define how to interpolate the data.
@@ -167,6 +183,7 @@ def create_1D_input(cs_file, cosipy_file, static_file, start_date, end_date):
         RRR = np.maximum(df[RRR_var].values + (hgt - stationAlt) * lapse_RRR, 0)                 # Precipitation
 
     if(SNOWFALL_var in df):
+        SNOWFALL = np.maximum(df[SNOWFALL_var].values, 0)   # SNOWFALL
         SNOWFALL = np.maximum(df[SNOWFALL_var].values + (hgt-stationAlt) * lapse_SNOWFALL, 0)   # SNOWFALL
 
     if(LWin_var in df):
@@ -470,11 +487,13 @@ def create_2D_input(cs_file, cosipy_file, static_file, start_date, end_date, x0=
         for t in range(len(dso.time)):
             doy = df.index[t].dayofyear
             hour = df.index[t].hour
+            declination = get_declination(latitude=stationLat, doy=doy)
+            max_zenith = 90 + stationLat - declination  # get declination for each day
             for i in range(len(ds.lat)):
                 for j in range(len(ds.lon)):
                     if (mask[i, j] == 1):
                         if radiationModule == 'Wohlfahrt2016':
-                            G_interp[t, i, j] = np.maximum(0.0, correctRadiation(lats[i], lons[j], timezone_lon, doy, hour, slope[i, j], aspect[i, j], sw[t], zeni_thld))
+                            G_interp[t, i, j] = np.maximum(0.0, correctRadiation(lats[i], lons[j], timezone_lon, doy, hour, slope[i, j], aspect[i, j], sw[t], max_zenith))
                         else:
                             G_interp[t, i, j] = sw[t]
 

@@ -199,6 +199,7 @@ class TestGridRemeshing:
         test_grid.add_fresh_snow(0.1, 250.0, 273.15, 0.0)
         test_grid.add_fresh_snow(0.1, 250.0, 273.15, 0.0)
         test_grid.add_fresh_debris(0.2, 2840.0, 273.15, 0.0)
+        test_grid.add_fresh_debris(0.2, 2840.0, 273.15, 0.0)
         compare_grid_data = test_grid.grid
         assert compare_grid_data[0].ntype == 1
         if arg_bury:
@@ -219,7 +220,7 @@ class TestGridRemeshing:
             test_grid.get_total_height(), float, test_total_height
         )
         assert test_grid.number_nodes < test_nodes
-        assert test_grid.get_number_debris_layers() == 1
+        assert test_grid.get_number_debris_layers() == 2
         if arg_bury:
             assert test_grid.get_node_ntype(0) == 0
         else:

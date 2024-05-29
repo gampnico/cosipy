@@ -26,9 +26,9 @@ if WRF_X_CSPY:
 
 
 ' INITIAL CONDITIONS '
-initial_snowheight_constant = 0.2               # Initial snowheight
+initial_snowheight_constant = 0.327               # Initial snowheight  1.8745 0.327
 initial_snow_layer_heights = 0.10               # Initial thickness of snow layers
-initial_glacier_height = 40.0                   # Initial glacier height without snowlayers
+initial_glacier_height = 15.0                   # Initial glacier height without snowlayers
 initial_glacier_layer_heights = 0.5             # Initial thickness of glacier ice layers
 
 initial_top_density_snowpack = 300.0            # Top density for initial snowpack
@@ -50,7 +50,7 @@ minimum_snowfall = 0.001                        # minimum snowfall per time step
 
 
 ' REMESHING OPTIONS'
-remesh_method = 'log_profile'                   # Remeshing (log_profile or adaptive_profile)
+remesh_method = 'adaptive_profile'                   # Remeshing (log_profile or adaptive_profile)
 first_layer_height = 0.01                       # The first layer will always have the defined height (m)
 layer_stretching = 1.20                         # Stretching factor used by the log_profile method (e.g. 1.1 mean the subsequent layer is 10% greater than the previous
 
@@ -67,7 +67,7 @@ albedo_firn = 0.55                              # albedo of firn [-] (Moelg et a
 albedo_ice = 0.3                                # albedo of ice [-] (Moelg et al. 2012, TC)
 albedo_mod_snow_aging = 22                      # effect of ageing on snow albedo [days] (Oerlemans and Knap 1998, J. Glaciol.)
 albedo_mod_snow_depth = 3                       # effect of snow depth on albedo [cm] (Oerlemans and Knap 1998, J. Glaciol.)
-albedo_debris = 0.2                             # albedo of debris [-] (Nicholson & Benn, 2013)
+albedo_debris = 0.16                             # albedo of debris [-] (Nicholson & Benn, 2013)
 
 ### For tropical glaciers or High Mountain Asia summer-accumulation glaciers (low latitude), the Moelg et al. 2012, TC should be tested for a possible better albedo fit 
 #albedo_mod_snow_aging = 6                      # effect of ageing on snow albedo [days] (Moelg et al. 2012, TC)
@@ -81,7 +81,7 @@ t_star_cutoff = 263.17                          # temperature threshold for t_st
 roughness_fresh_snow = 0.24                     # surface roughness length for fresh snow [mm] (Moelg et al. 2012, TC)
 roughness_ice = 1.7                             # surface roughness length for ice [mm] (Moelg et al. 2012, TC)
 roughness_firn = 4.0                            # surface roughness length for aged snow [mm] (Moelg et al. 2012, TC)
-roughness_debris = 15.0                         # surface roughness length for debris [mm]. Median: 15-37. Nicholson & Stiperski, 2020)
+roughness_debris = 36.0                         # surface roughness length for debris [mm]. Median: 15-37. Nicholson & Stiperski, 2020)
 aging_factor_roughness = 0.0026                 # effect of ageing on roughness lenght (hours) 60 days from 0.24 to 4.0 => 0.0026
 
 snow_ice_threshold = 900.0                      # pore close of density [kg m^(-3)]
@@ -106,26 +106,48 @@ sigma = 5.67e-8                                 # Stefan-Bolzmann constant [W m-
 zero_temperature = 273.16                       # Melting temperature [K]
 surface_emission_coeff = 0.99                   # surface emission coefficient [-]
 
+surface_emission_coeff_debris = 0.94 # (Collier et al., 2015)
 critical_snowpack_thickness = 0.1               # critical snowpack thickness [m] (Lejeune et al., 2007)
 lejeune_weighting_coefficient = 0.33            # empirical weighting coefficient [-] (Lejeune et al., 2007)
 
 ' DEBRIS CONSTANTS '
 # Lithological constants are empirically determined and highly localised.
 
-debris_thickness = 0.14  # Mean debris thickness [m] (Suldenferner, Nicholson & Stiperski, 2020).
+number_debris_layers = 10  # Number of debris layers. Minimum 5.
+debris_thickness = 0.09  # Mean debris thickness [m] (Suldenferner, Nicholson & Stiperski, 2020).
+# debris_thickness = 0.0036  # Mean debris thickness [m] (Suldenferner, Nicholson & Stiperski, 2020).
 debris_max_temperature = 313.15  # Maximum allowed surface temperature for debris [K].
 
 # Dolomitic debris
 debris_structure = "sedimentary"  # debris structure, e.g. sedimentary, crystalline.
 debris_density = 2840.0  # debris density [kg m-3] (Dolomite clasts, MinDat).
-debris_porosity = 0.3  # debris porosity [-] (Supraglacial debris, Anderson & Anderson, 2016).
-debris_packing_porosity = 0.2596  # Volumetrically-weighted! 0.2596 for rombohedral packing, 0.4764 for cubic packing.
+# debris_porosity = 0.3  # debris porosity [-] (Supraglacial debris, Anderson & Anderson, 2016).
+debris_porosity = 0.00054  # debris porosity [-] (Decompressed epikarstic zone, Volpi et al., 2017).
+"""Volumetrically-weighted debris packing porosity.
 
+Possible values:
+   :HCP: 0.2595 (Steinhaus, 1999)
+   :BC-CCP: 0.4764 (Steinhaus, 1999)
+   :Tetrahedral lattice: 0.6599 (Hilbert & Cohn-Vossen, 1999)
+   :Unfilled hexagonal lattice: 0.6977
+   :Maximum: 0.0555 (Gardner, 1966)
+"""
+debris_packing_porosity = 0.2595  # Volumetrically-weighted. HCP: 0.2595, BC-CCP: 0.4764, tetrahedral lattice: 0.6599, unfilled hexagonal lattice: 0.6977, maximum: 0.0555 (Gardner, 1966; Hilbert & Cohn-Vossen, 1999; Steinhaus, 1999)
 # TC, TD, and Cp are related: Cp = TC / (TD * rho). Scale values to 273.15 K.
 thermal_conductivity_debris =  5.4 # debris thermal conductivity (dolomite, Fuchs 2015) [W m-1 K-1].
-thermal_diffusivity_debris =  2.16  # debris thermal diffusivity (dolomite, Fuchs 2015) [10^-6 m^2 s-1]
+thermal_diffusivity_debris =  2.16*(10**-6)  # debris thermal diffusivity (dolomite, Fuchs 2015) [10^-6 m^2 s-1]
 spec_heat_debris = 870.0 # debris specific heat capacity (dolomite, Fuchs 2015) [J kg-1 K-1]
 
 # Debris void filler: fills interstitial spaces in the debris matrix. Not fully implemented!
 debris_void_porosity = 1.0  # Porosity of material filling debris void. Set to "1.0" for air.
 debris_void_density = 0.0 # Density of debris void filler. Ignored if the debris_void_porosity is "1.0".
+
+
+# McCarthy
+# debris_thickness = 0.11      # Mean debris thickness [m] (Suldenferner, Nicholson & Stiperski, 2020).
+# debris_packing_porosity = 0.2595  # Volumetrically-weighted. HCP: 0.2595, FC-CCP: 0.4764, tetrahedral lattice: 0.6599, unfilled hexagonal lattice: 0.6977, maximum: 0.0555 (Gardner, 1966; Hilbert & Cohn-Vossen, 1999; Steinhaus, 1999)
+# albedo_debris = 0.16                             # albedo of debris [-] (Nicholson & Benn, 2013)
+# roughness_debris = 36.0                         # surface roughness length for debris [mm]. Median: 15-37. Nicholson & Stiperski, 2020)
+# thermal_conductivity_debris = 0.6949 # debris thermal conductivity (dolomite, Fuchs 2015) [W m-1 K-1].
+# thermal_diffusivity_debris =  3.02*(10**-7)  # debris thermal diffusivity (dolomite, Fuchs 2015) [10^-6 m^2 s-1]
+# spec_heat_debris = 811.49 # debris specific heat capacity (dolomite, Fuchs 2015) [J kg-1 K-1]

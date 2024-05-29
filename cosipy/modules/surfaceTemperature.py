@@ -135,10 +135,12 @@ def update_surface_temperature(
 
     # Set minimisation bounds
     lower_bnd_ts, upper_bnd_ts = get_minimisation_bounds(GRID)
-    if use_debris:
-        optimisation_function = eb_optim_debris
-    else:
-        optimisation_function = eb_optim
+    # sfc_layer_type = GRID.get_node_ntype(0)
+    # if use_debris:
+    #     optimisation_function = eb_optim_debris
+    # else:
+    #     optimisation_function = eb_optim
+    optimisation_function=eb_optim
 
     # Update surface temperature
     # fmt: off
@@ -170,7 +172,7 @@ def update_surface_temperature(
                 bounds=((lower_bnd_ts, upper_bnd_ts),),
                 tol=1e-2,
                 args=(
-                    optimisation_function, GRID, dt, z, z0, T2, rH2, p,
+                    GRID, dt, z, z0, T2, rH2, p,
                     SWnet, u2, RAIN, SLOPE, B_Ts, LWin, N,
                 ),
             )
@@ -218,15 +220,18 @@ def get_subsurface_temperature(
     depth = cumulative_depth.flat[idx1_depth]
 
     if depth > zlt:
-        idx2_depth = idx1_depth - 1
+        idx2_depth = max(idx1_depth - 1, 0)
     else:
-        idx2_depth = idx1_depth + 1
+        idx2_depth = min(idx1_depth + 1, GRID.number_nodes - 1)
 
     temperature_idx1 = GRID.get_node_temperature(idx1_depth)
-    t_z = temperature_idx1 + (
-        (temperature_idx1 - GRID.get_node_temperature(idx2_depth))
-        / (cumulative_depth[idx1_depth] - cumulative_depth[idx2_depth])
-    ) * (zlt - cumulative_depth[idx1_depth])
+    if idx1_depth == idx2_depth:
+        t_z = temperature_idx1
+    else:
+        t_z = temperature_idx1 + (
+            (temperature_idx1 - GRID.get_node_temperature(idx2_depth))
+            / (cumulative_depth[idx1_depth] - cumulative_depth[idx2_depth])
+        ) * (zlt - cumulative_depth[idx1_depth])
 
     return t_z
 
@@ -238,23 +243,39 @@ def interp_subT(GRID) -> np.ndarray:
     # Cumulative layer depths
     layer_heights_cum = np.cumsum(np.array(GRID.get_height()))
 
-    t_z1 = get_subsurface_temperature(GRID, layer_heights_cum, constants.zlt1)
-    t_z2 = get_subsurface_temperature(GRID, layer_heights_cum, constants.zlt2)
+    if not use_debris:
+        zlt1 = constants.zlt1
+        zlt2 = constants.zlt2
+    else:
+        zlt1, zlt2 = interp_subT_debris(GRID=GRID)
+
+    t_z1 = get_subsurface_temperature(GRID, layer_heights_cum, zlt1)
+    t_z2 = get_subsurface_temperature(GRID, layer_heights_cum, zlt2)
 
     return np.array([t_z1, t_z2])
 
 
 @njit
-def interp_subT_debris(GRID) -> np.ndarray:
-    """Get debris temperatures at its layer extents."""
-    layer_heights_cum = np.cumsum(np.array(GRID.get_height()))
-    bottom_debris_idx, top_ice_idx = GRID.get_debris_extents()
-    t_z1 = get_subsurface_temperature(
-        GRID, layer_heights_cum, bottom_debris_idx
-    )
-    t_z2 = get_subsurface_temperature(GRID, layer_heights_cum, top_ice_idx)
+def interp_subT_debris(GRID) -> tuple:
+    """Get interpolation depths for ground heat flux."""
 
-    return np.array([t_z1, t_z2])
+    zlt_ratio = constants.zlt1 / constants.zlt2
+    if GRID.get_node_ntype(0) == 1:
+        debris_height = GRID.get_total_debris_height()
+        zlt2 = debris_height + constants.zlt2
+        zlt1 = zlt_ratio * zlt2
+        if zlt1 > debris_height:
+            zlt1 = (1 - zlt_ratio) * debris_height
+    else:
+        snow_height = GRID.get_supraglacial_snow()
+        if constants.zlt2 > snow_height:
+            zlt2 = snow_height
+            zlt1 = zlt_ratio * zlt2
+        else:
+            zlt1 = constants.zlt1
+            zlt2 = constants.zlt2
+
+    return zlt1, zlt2
 
 
 @njit
@@ -400,17 +421,14 @@ def eb_fluxes(
             Cs_q = 0.41 * np.sqrt(Cd) / (np.log(z / z0q) - delta_phi_tq)
 
             # Surface heat flux
-            H = (
-                rho
-                * constants.spec_heat_air
-                * Cs_t
-                * u2
-                * (T2 - T0)
-                * cos_slope_radians
+            H = get_sensible_heat_flux(
+                rho, Cs_t, u2, (T2 - T0), cos_slope_radians
             )
 
             # Latent heat flux
-            LE = rho * Lv * Cs_q * u2 * (q2 - q0) * cos_slope_radians
+            LE = get_latent_heat_flux(
+                rho, Lv, Cs_q, u2, (q2 - q0), cos_slope_radians
+            )
 
             # Monin-Obukhov length
             L = MO(rho, ust, T2, H)
@@ -448,30 +466,28 @@ def eb_fluxes(
         if 0.01 < Ri <= 0.2:
             phi = np.power(1 - 5 * Ri, 2)
         elif Ri > 0.2:
-            phi = 0
+            phi = 0.0
 
         # Sensible heat flux
-        H = (
-            rho
-            * constants.spec_heat_air
-            * Cs_t
-            * u2
-            * (T2 - T0)
-            * phi
-            * cos_slope_radians
+        H = phi * get_sensible_heat_flux(
+            rho, Cs_t, u2, (T2 - T0), cos_slope_radians
         )
 
         # Latent heat flux
-        LE = rho * Lv * Cs_q * u2 * (q2 - q0) * phi * cos_slope_radians
+        LE = phi * get_latent_heat_flux(
+            rho, Lv, Cs_q, u2, (q2 - q0), cos_slope_radians
+        )
 
     else:
         # msg = f"Stability correction {constants.stability_correction} is not supported."
         raise ValueError("Stability correction is not supported.")
 
     # Outgoing longwave radiation
-    Lo = (
-        -constants.surface_emission_coeff * constants.sigma * np.power(T0, 4.0)
-    )
+    if GRID.get_node_ntype(0) == 1:
+        surface_emission = constants.surface_emission_coeff_debris
+    else:
+        surface_emission = constants.surface_emission_coeff
+    Lo = -surface_emission * constants.sigma * np.power(T0, 4.0)
 
     # Get thermal conductivity
     lam = GRID.get_node_thermal_conductivity(0)
@@ -500,6 +516,20 @@ def eb_fluxes(
         Li.item(), Lo.item(), H.item(), LE.item(), B.item(), QRR.item(),
         rho, Lv, L, Cs_t, Cs_q, q0, q2,
     )  # fmt: on
+
+
+@njit
+def get_sensible_heat_flux(
+    rho: float, Cs_t: float, u2: float, dT: float, cos_slope: float
+) -> float:
+    return rho * constants.spec_heat_air * Cs_t * u2 * dT * cos_slope
+
+
+@njit
+def get_latent_heat_flux(
+    rho: float, Lv: float, Cs_q: float, u2: float, dq: float, cos_slope: float
+) -> float:
+    return rho * Lv * Cs_q * u2 * dq * cos_slope
 
 
 @njit
@@ -597,7 +627,7 @@ def method_EW_Sonntag(T: float) -> float:
 @njit
 def eb_optim(
     T0: float, GRID, dt: int, z: float, z0: float, T2: float, rH2: float,
-    p: float, SWnet: float, u2: float, RAIN: float, SLOPE: float, B_Ts: float,
+    p: float, SWnet: float, u2: float, RAIN: float, SLOPE: float, B_Ts: np.ndarray,
     LWin: float = None, N: float = None,
 ) -> float:
     """Optimization function to solve for surface temperature T0"""
@@ -617,7 +647,7 @@ def eb_optim(
 @njit
 def eb_optim_debris(
     T0: float, GRID, dt: int, z: float, z0: float, T2: float, rH2: float,
-    p: float, SWnet: float, u2: float, RAIN: float, SLOPE: float, B_Ts: float,
+    p: float, SWnet: float, u2: float, RAIN: float, SLOPE: float, B_Ts: np.ndarray,
     LWin: float = None, N: float = None,
 ) -> float:
     """Optimization function to solve for surface temperature T0."""
@@ -629,7 +659,9 @@ def eb_optim_debris(
 
     # Return the residual (is minimized by the optimization function)
     if constants.sfc_temperature_method == "Newton":
-        return SWnet + T0 * ((Li + Lo) + H + L + B + Qrr)
+        # return SWnet + T0 * ((Li + Lo) + H + L + B + Qrr)
+        return SWnet + Li + Lo + H + L + B + Qrr
     else:
-        return np.abs(SWnet + T0 * ((Li + Lo) + H + L + B + Qrr))
+        # return np.abs(SWnet + T0 * ((Li + Lo) + H + L + B + Qrr))
+        return np.abs(SWnet + Li + Lo + H + L + B + Qrr)
 # fmt: on

@@ -53,11 +53,13 @@ def get_selection(
     if not mean:
         data = array.sel(time=timestamp, method="nearest")
     else:
-        data = (
-            array.resample(time="1D", skipna=True)
-            .mean()
-            .sel(time=timestamp, method="nearest")
-        )
+        # data = array.where(~np.isnan(array))
+        data = array.where(~np.isnan(array.HGT))
+        # data = (
+        #     array.resample(time="1D", skipna=True)
+        #     .mean()
+        #     .sel(time=timestamp, method="nearest")
+        # )
 
     return data
 
@@ -85,7 +87,7 @@ def get_coords(data) -> tuple:
 def create_points(data: xr.Dataset) -> vtk.vtkPoints:
     """Convert xarray dataset to points."""
 
-    print("Writing points...\n")
+    print("Creating points...\n")
     latitude, longitude = get_coords(data)
     points = vtk.vtkPoints()
     if "south_north" in data.keys():
@@ -216,8 +218,8 @@ def createDEM_v1(
     polydata = vtk.vtkPolyData()
     polydata.SetPoints(points)
 
-    # Use 2D for large spatial domains, 3D for smaller ones
-    delaunay = vtk.vtkDelaunay3D()
+    # Use 2D for high-resolution spatial domains, 3D for smaller ones
+    delaunay = vtk.vtkDelaunay2D()
 
     delaunay.SetInputData(polydata)
     delaunay.Update()
@@ -268,7 +270,9 @@ def add_hgt_underlay(
     """Replace missing data with elevation mask."""
 
     hgt_mask = hgt.stack(x=[latitude, longitude])
-    data.values[(~np.isnan(data.values))] = np.nanmax(hgt_mask.values) + 1
+    ndv_replacement = np.nanmax(hgt_mask.values) + 1000
+    print(ndv_replacement)
+    data.values[(~np.isnan(data.values))] = ndv_replacement
 
     data.values[np.isnan(data.values)] = hgt_mask.values[np.isnan(data.values)]
 
@@ -400,7 +404,7 @@ def get_elevation_colormap(
     Returns:
         Elevation colour map.
     """
-    correct_max = scalar_range[1] - 1
+    correct_max = scalar_range[1] - 1000
     dz = correct_max - scalar_range[0]
     cmap = vtk.vtkColorTransferFunction()
     rgb = {
@@ -414,18 +418,19 @@ def get_elevation_colormap(
         "deep_aquamarine": (54, 135, 112),
         "dark_cerulean": (28, 77, 122),
         "black": (38, 38, 18),
+        "cyan": (0, 255, 255),
     }
     hsv = {}
     for key, val in rgb.items():
         hsv[key] = (i / 256 for i in val)
-    cmap.AddRGBPoint(scalar_range[0] - (0.25 * dz), *hsv["black"])
-    cmap.AddRGBPoint(scalar_range[0], *hsv["palm_leaf"])
-    cmap.AddRGBPoint(correct_max - (0.8 * dz), *hsv["drab_olive"])
-    cmap.AddRGBPoint(correct_max - (0.6 * dz), *hsv["light_beige"])
-    cmap.AddRGBPoint(correct_max - (0.4 * dz), *hsv["ochre"])
-    cmap.AddRGBPoint(correct_max - (0.2 * dz), *hsv["wheat"])
-    cmap.AddRGBPoint(correct_max, *hsv["eggshell"])
-    cmap.AddRGBPoint(correct_max + 1, 1.0, 1.0, 1.0)
+    # cmap.AddRGBPoint((-0.25 * dz), *hsv["black"])
+    cmap.AddRGBPoint(0, *hsv["palm_leaf"])
+    cmap.AddRGBPoint((0.2 * dz), *hsv["drab_olive"])
+    cmap.AddRGBPoint((0.4 * dz), *hsv["light_beige"])
+    cmap.AddRGBPoint((0.6 * dz), *hsv["wheat"])
+    cmap.AddRGBPoint((0.8 * dz), *hsv["ochre"])
+    cmap.AddRGBPoint(dz, *hsv["eggshell"])
+    cmap.SetRange(0, dz)  # clamp in case of mask
 
     return cmap
 
@@ -444,12 +449,12 @@ def set_color_map(
         contours: Number of contours.
         scalar_range: Minimum and maximum data values.
     """
-    lookup_table.SetNumberOfColors(contours + 1)
-
-    for i in range(contours + 1):
-        new_colour = cmap.GetColor(
-            (i * (((scalar_range[1] - 1) - scalar_range[0]) / (contours + 1)))
-        )
+    lookup_table.SetNumberOfColors(contours)
+    correct_max = scalar_range[1] - 1000
+    dz = correct_max - scalar_range[0]
+    for i in range(contours):
+        lookup_value = i * (dz / (contours))
+        new_colour = cmap.GetColor(lookup_value)
         lookup_table.SetTableValue(i, *new_colour)
 
 
@@ -481,7 +486,8 @@ def plotSurface(
     num_contours = contours + 1
 
     lut = vtk.vtkLookupTable()
-    lut.SetNumberOfTableValues(num_contours)
+    # lut.SetNumberOfTableValues(num_contours)
+    lut.SetTableRange(scalar_range[0], scalar_range[1] - 1000)
 
     if variable.lower() in ["hgt", "mask"]:
         cmap = get_elevation_colormap(scalar_range=scalar_range)
@@ -491,11 +497,12 @@ def plotSurface(
             contours=num_contours,
             scalar_range=scalar_range,
         )
-        if variable.lower() == "mask":  # make glacier white!
-            lut.SetTableValue(num_contours, 1.0, 1.0, 1.0)
+        if variable.lower() == "mask":
+            lut.SetUseAboveRangeColor(1)
+            lut.SetAboveRangeColor(0.0, 1.0, 1.0, 1.0)
     else:
         lut.SetHueRange(0.1, 0.75)  # matches cmap in plot_cosipy_profiles
-    lut.SetNanColor(1, 1, 1, 0.5)
+    lut.SetNanColor(0, 0, 0, 0.5)
     lut.Build()
 
     # mapper
@@ -506,7 +513,7 @@ def plotSurface(
     cone_mapper.SetScalarModeToUsePointData()
     cone_mapper.ScalarVisibilityOn()
     cone_mapper.SetLookupTable(lut)
-    cone_mapper.SetScalarRange(scalar_range[0], scalar_range[1] - 1)
+    cone_mapper.SetScalarRange(scalar_range[0], scalar_range[1] - 1000)
     cone_mapper.SetInterpolateScalarsBeforeMapping(1)  # stops colour smudging
     cone_mapper.Update()
 
@@ -515,7 +522,7 @@ def plotSurface(
     cone_actor.SetMapper(cone_mapper)
     cone_actor.SetScale(1, 1, 50)
     cone_actor.GetProperty().SetEdgeColor(0.7, 0.7, 0.7)
-    cone_actor.GetProperty().EdgeVisibilityOn()
+    # cone_actor.GetProperty().EdgeVisibilityOn()
     cone_actor.GetProperty().SetAmbient(0.0)
     cone_actor.GetProperty().SetSpecularPower(0)
     cone_actor.GetProperty().SetDiffuse(1)
@@ -538,6 +545,13 @@ def plotSurface(
     height = 1200
     render_window.SetSize(width, height)
 
+    # colour bar
+    # bar_actor = vtk.vtkScalarBarActor()
+    # bar_actor.SetLabelFormat("%4.0F m")
+    # bar_actor.GetProperty().SetColor(0, 0, 0)
+    # bar_actor.GetLabelTextProperty().SetShadow(0)
+    # bar_actor.SetLookupTable(lut)
+
     # create interactor for render window
     joystick_style = vtk.vtkInteractorStyleJoystickCamera()
     interactive_render = vtk.vtkRenderWindowInteractor()
@@ -546,6 +560,7 @@ def plotSurface(
     # assign actor to renderer
     render.SetBackground(1, 1, 1)
     render.AddActor(cone_actor)
+    # render.AddActor(bar_actor)
     render.SetActiveCamera(camera)
     render.ResetCamera()
 

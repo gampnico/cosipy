@@ -185,6 +185,20 @@ class TestDebrisNodeGet:
             node.get_layer_specific_heat(), float, test_specific_heat
         )
 
+    @pytest.mark.parametrize("arg_ice_fraction", [0.1, 0.5, 1.0])
+    def test_node_get_layer_irreducible_water_content(
+        self, node, conftest_boilerplate, arg_ice_fraction
+    ):
+        test_iwc = 0.0  # for dry debris
+        test_node = self.create_node()
+        test_node.set_layer_ice_fraction(
+            ifr=arg_ice_fraction
+        )  # must be forced
+        assert test_node.ice_fraction == arg_ice_fraction
+        conftest_boilerplate.check_output(
+            node.get_layer_irreducible_water_content(), float, test_iwc
+        )
+
     def test_node_get_layer_cold_content(self, node, conftest_boilerplate):
         test_cold_content = (
             -node.get_layer_specific_heat()

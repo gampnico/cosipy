@@ -7,6 +7,7 @@ To add a new method:
 2. Go to `cpkernel.patch._ctors` and follow the instructions there.
 3. Go to `cpkernel.patch.proxies` and follow the instructions there.
 """
+
 import math
 
 from numba import float64, int64, njit
@@ -58,17 +59,17 @@ def DebrisNode_get_layer_ntype(self) -> int64:
 
 @njit(cache=False)
 def DebrisNode_get_layer_air_porosity(self) -> float64:
-    """Get the node's volumetrically-weighted interstitial void porosity.
+    """Get the node's volume-weighted interstitial void porosity.
 
     The function's name is kept as `get_layer_air_porosity` for
     cross-compatibility with other Node objects.
 
     Does NOT include the debris material's porosity, and assumes no
     liquid water content. Note that the packing and void porosities are
-    volumetrically-weighted!
+    volume-weighted!
 
     Returns:
-        Volumetrically-weighted interstitial void porosity [-].
+        Volume-weighted interstitial void porosity [-].
     """
 
     if constants.debris_void_porosity >= 1.0:  # filled with air
@@ -86,13 +87,18 @@ def DebrisNode_get_layer_porosity(self) -> float:
     """Get the node's porosity.
 
     Returns:
-        Total volumetrically-weighted debris porosity and its
-        interstitial void porosity. [-].
+        Total volume-weighted debris porosity and its interstitial void
+        porosity. [-].
     """
 
+    # porosity = (
+    #     1 - constants.debris_packing_porosity
+    # ) * constants.debris_porosity + DebrisNode_get_layer_air_porosity(self)
     porosity = (
-        1 - constants.debris_packing_porosity
-    ) * constants.debris_porosity + DebrisNode_get_layer_air_porosity(self)
+        constants.debris_packing_porosity
+        * DebrisNode_get_layer_air_porosity(self)
+        + constants.debris_porosity * (1 - constants.debris_packing_porosity)
+    )
 
     return porosity
 
@@ -112,24 +118,25 @@ def DebrisNode_get_layer_density(self) -> float64:
     if constants.debris_void_porosity >= 1.0:
         density = (
             DebrisNode_get_layer_porosity(self) * constants.air_density
+            + (1 - DebrisNode_get_layer_porosity(self))
+            * constants.debris_density
+        )
+    else:
+        density = (
+            DebrisNode_get_layer_porosity(self) * constants.air_density
             + (1 - constants.debris_packing_porosity)
             * constants.debris_porosity
             * constants.debris_density  # clast density
             + (1 - DebrisNode_get_layer_air_porosity(self))
             * constants.debris_void_density  # void filler density
         )
-    else:
-        density = (
-            DebrisNode_get_layer_porosity(self) * constants.air_density
-            + (1 - DebrisNode_get_layer_porosity(self))
-            * constants.debris_density
-        )
+
     return density
 
 
 @njit(cache=False)
 def DebrisNode_get_layer_specific_heat(self) -> float64:
-    """Get the node's volumetrically-averaged specific heat capacity.
+    """Get the node's volume-weighted specific heat capacity.
 
     Returns:
         Specific heat capacity [:math:`J~kg^{-1}~K^{-1}`].
@@ -170,7 +177,7 @@ def DebrisNode_get_layer_cold_content(self) -> float64:
 
 
 @njit(cache=False)
-def DebrisNode_get_layer_thermal_conductivity(self) -> float64:
+def DebrisNode_get_layer_thermal_conductivity_s(self) -> float64:
     """Gets the node's thermal conductivity at ambient temperature.
 
     The debris' thermal conductivity at 273.15 K should be set in
@@ -224,6 +231,43 @@ def DebrisNode_get_layer_thermal_diffusivity(self) -> float64:
             * DebrisNode_get_layer_specific_heat(self)
         )
     return k
+
+
+@njit(cache=False)
+def DebrisNode_get_layer_thermal_conductivity(self):
+    """Gets the node's thermal conductivity at ambient temperature.
+
+    The debris' thermal conductivity at 273.15 K should be set in
+    constants.py, as it varies between lithologies.
+
+    Equation is from Steiner et al. (2021).
+
+    Returns:
+        Thermal conductivity [:math:`W~m^{-1}~K^{-1}`].
+    """
+
+    debris_layer_porosity = DebrisNode_get_layer_porosity(self)
+    debris_volumetric_heat_capacity = (
+        constants.debris_density
+        * constants.spec_heat_debris
+        * (1 - debris_layer_porosity)
+    )
+    debris_saturation = DebrisNode_get_layer_liquid_water_content(self) / 0.2
+    snow_volumetric_heat_capacity = (
+        constants.water_density * constants.spec_heat_water * debris_saturation
+    )
+    air_volumetric_heat_capacity = (
+        constants.air_density
+        * constants.spec_heat_air
+        * (1 - debris_saturation)
+    )
+
+    conductivity = constants.thermal_diffusivity_debris * (
+        debris_volumetric_heat_capacity
+        + debris_layer_porosity
+        * (snow_volumetric_heat_capacity + air_volumetric_heat_capacity)
+    )
+    return conductivity
 
 
 @njit(cache=False)

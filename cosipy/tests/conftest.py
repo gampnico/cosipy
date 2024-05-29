@@ -364,31 +364,64 @@ class TestBoilerplate:
         assert not rng_444_state == rng_123_state
 
     def regenerate_grid_values(
-        self, grid: Grid, key: str, distribution: str
+        self, grid: Grid, distribution: str = "zero"
     ) -> Grid:
-        rng = self.set_rng_seed()
+        """Set liquid water content to match a distribution.
+
+        Args:
+            grid: Glacier data mesh.
+            distribution: Data distribution. Default "zero". Supports::
+
+            - random: Random uniform between 0.01 and 0.05.
+            - static: All liquid water content set to 0.1.
+            - decreasing: Follows `1 - (0.01 * node_index)`.
+            - increasing: Follows `0.01 * node_index`.
+            - zero: All liquid water content set to 0.
+
+        Returns:
+            Glacier data mesh with an updated distribution of liquid
+            water content.
+        """
+
         if distribution == "random":
+            rng = self.set_rng_seed()
             for idx in range(0, grid.number_nodes - 1):
                 grid.set_node_liquid_water_content(
                     idx, rng.uniform(low=0.01, high=0.05)
                 )
         elif distribution == "static":
             for idx in range(0, grid.number_nodes - 1):
-                grid.set_node_liquid_water_content(idx, 1.0)
+                grid.set_node_liquid_water_content(idx, 0.1)
         elif distribution == "decreasing":
             for idx in range(0, grid.number_nodes - 1):
-                grid.set_node_liquid_water_content(
-                    idx, 0.01 * grid.number_nodes
-                )
-        else:
+                grid.set_node_liquid_water_content(idx, 1 - (0.01 * idx))
+        elif distribution == "increasing":
+            for idx in range(0, grid.number_nodes - 1):
+                grid.set_node_liquid_water_content(idx, 0.01 * idx)
+        elif distribution == "zero":
             for idx in range(0, grid.number_nodes - 1):
                 grid.set_node_liquid_water_content(idx, 0)
+        else:
+            raise ValueError("Distribution not supported!")
 
         return grid
 
-    def test_generate_grid_values(self):
-        grid = self.regenerate_grid_values(distribution="static")
-        assert isinstance(grid, Grid)
+    def test_regenerate_grid_values(self, conftest_mock_grid):
+        grid = conftest_mock_grid
+        distribution_list = [
+            "static",
+            "decreasing",
+            "increasing",
+            "random",
+            "zero",
+        ]
+        for distribution in distribution_list:
+            grid = self.regenerate_grid_values(
+                grid=grid, distribution=distribution
+            )
+            assert isinstance(grid, Grid)
+            test_lwc = grid.get_liquid_water_content()
+            assert all(isinstance(i, float) for i in test_lwc)
 
     def check_output(self, variable: Any, x_type: Any, x_value: Any) -> bool:
         """Check a variable matches an expected type and value.
